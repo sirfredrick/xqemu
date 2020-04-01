@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 # Copyright (c) 2013 Kevin Wolf <kwolf@redhat.com>
 #

@@ -15,7 +15,6 @@ ETEXI
         .params     = "[cmd]",
         .help       = "show the help",
         .cmd        = do_help_cmd,
-        .flags      = "p",
     },
 
 STEXI
@@ -55,25 +54,6 @@ STEXI
 @item q or quit
 @findex quit
 Quit the emulator.
-ETEXI
-
-    {
-        .name       = "exit_preconfig",
-        .args_type  = "",
-        .params     = "",
-        .help       = "exit the preconfig state",
-        .cmd        = hmp_exit_preconfig,
-        .flags      = "p",
-    },
-
-STEXI
-@item exit_preconfig
-@findex exit_preconfig
-This command makes QEMU exit the preconfig state and proceed with
-VM initialization using configuration data provided on the command line
-and via the QMP monitor during the preconfig state. The command is only
-available during the preconfig state (i.e. when the --preconfig command
-line option was in use).
 ETEXI
 
     {
@@ -350,57 +330,49 @@ ETEXI
     {
         .name       = "savevm",
         .args_type  = "name:s?",
-        .params     = "tag",
-        .help       = "save a VM snapshot. If no tag is provided, a new snapshot is created",
+        .params     = "[tag|id]",
+        .help       = "save a VM snapshot. If no tag or id are provided, a new snapshot is created",
         .cmd        = hmp_savevm,
     },
 
 STEXI
-@item savevm @var{tag}
+@item savevm [@var{tag}|@var{id}]
 @findex savevm
 Create a snapshot of the whole virtual machine. If @var{tag} is
 provided, it is used as human readable identifier. If there is already
-a snapshot with the same tag, it is replaced. More info at
+a snapshot with the same tag or ID, it is replaced. More info at
 @ref{vm_snapshots}.
-
-Since 4.0, savevm stopped allowing the snapshot id to be set, accepting
-only @var{tag} as parameter.
 ETEXI
 
     {
         .name       = "loadvm",
         .args_type  = "name:s",
-        .params     = "tag",
-        .help       = "restore a VM snapshot from its tag",
+        .params     = "tag|id",
+        .help       = "restore a VM snapshot from its tag or id",
         .cmd        = hmp_loadvm,
         .command_completion = loadvm_completion,
     },
 
 STEXI
-@item loadvm @var{tag}
+@item loadvm @var{tag}|@var{id}
 @findex loadvm
 Set the whole virtual machine to the snapshot identified by the tag
-@var{tag}.
-
-Since 4.0, loadvm stopped accepting snapshot id as parameter.
+@var{tag} or the unique snapshot ID @var{id}.
 ETEXI
 
     {
         .name       = "delvm",
         .args_type  = "name:s",
-        .params     = "tag",
-        .help       = "delete a VM snapshot from its tag",
+        .params     = "tag|id",
+        .help       = "delete a VM snapshot from its tag or id",
         .cmd        = hmp_delvm,
         .command_completion = delvm_completion,
     },
 
 STEXI
-@item delvm @var{tag}
+@item delvm @var{tag}|@var{id}
 @findex delvm
-Delete the snapshot identified by @var{tag}.
-
-Since 4.0, delvm stopped deleting snapshots by snapshot id, accepting
-only @var{tag} as parameter.
+Delete the snapshot identified by @var{tag} or @var{id}.
 ETEXI
 
     {
@@ -651,21 +623,6 @@ sendkey ctrl-alt-f1
 
 This command is useful to send keys that your graphical user interface
 intercepts at low level, such as @code{ctrl-alt-f1} in X Window.
-ETEXI
-    {
-        .name       = "sync-profile",
-        .args_type  = "op:s?",
-        .params     = "[on|off|reset]",
-        .help       = "enable, disable or reset synchronization profiling. "
-                      "With no arguments, prints whether profiling is on or off.",
-        .cmd        = hmp_sync_profile,
-    },
-
-STEXI
-@item sync-profile [on|off|reset]
-@findex sync-profile
-Enable, disable or reset synchronization profiling. With no arguments, prints
-whether profiling is on or off.
 ETEXI
 
     {
@@ -939,31 +896,14 @@ stops because the size limit is reached.
 ETEXI
 
     {
-        .name       = "announce_self",
-        .args_type  = "",
-        .params     = "",
-        .help       = "Trigger GARP/RARP announcements",
-        .cmd        = hmp_announce_self,
-    },
-
-STEXI
-@item announce_self
-@findex announce_self
-Trigger a round of GARP/RARP broadcasts; this is useful for explicitly updating the
-network infrastructure after a reconfiguration or some forms of migration.
-The timings of the round are set by the migration announce parameters.
-ETEXI
-
-    {
         .name       = "migrate",
-        .args_type  = "detach:-d,blk:-b,inc:-i,resume:-r,uri:s",
-        .params     = "[-d] [-b] [-i] [-r] uri",
+        .args_type  = "detach:-d,blk:-b,inc:-i,uri:s",
+        .params     = "[-d] [-b] [-i] uri",
         .help       = "migrate to URI (using -d to not wait for completion)"
 		      "\n\t\t\t -b for migration without shared storage with"
 		      " full copy of disk\n\t\t\t -i for migration without "
 		      "shared storage with incremental copy of disk "
-		      "(base image shared between src and destination)"
-                      "\n\t\t\t -r to resume a paused migration",
+		      "(base image shared between src and destination)",
         .cmd        = hmp_migrate,
     },
 
@@ -1016,34 +956,7 @@ STEXI
 @findex migrate_incoming
 Continue an incoming migration using the @var{uri} (that has the same syntax
 as the -incoming option).
-ETEXI
 
-    {
-        .name       = "migrate_recover",
-        .args_type  = "uri:s",
-        .params     = "uri",
-        .help       = "Continue a paused incoming postcopy migration",
-        .cmd        = hmp_migrate_recover,
-    },
-
-STEXI
-@item migrate_recover @var{uri}
-@findex migrate_recover
-Continue a paused incoming postcopy migration using the @var{uri}.
-ETEXI
-
-    {
-        .name       = "migrate_pause",
-        .args_type  = "",
-        .params     = "",
-        .help       = "Pause an ongoing migration (postcopy-only)",
-        .cmd        = hmp_migrate_pause,
-    },
-
-STEXI
-@item migrate_pause
-@findex migrate_pause
-Pause an ongoing migration.  Currently it only supports postcopy.
 ETEXI
 
     {
@@ -1175,33 +1088,30 @@ ETEXI
 
     {
         .name       = "dump-guest-memory",
-        .args_type  = "paging:-p,detach:-d,windmp:-w,zlib:-z,lzo:-l,snappy:-s,filename:F,begin:l?,length:l?",
-        .params     = "[-p] [-d] [-z|-l|-s|-w] filename [begin length]",
+        .args_type  = "paging:-p,detach:-d,zlib:-z,lzo:-l,snappy:-s,filename:F,begin:i?,length:i?",
+        .params     = "[-p] [-d] [-z|-l|-s] filename [begin length]",
         .help       = "dump guest memory into file 'filename'.\n\t\t\t"
                       "-p: do paging to get guest's memory mapping.\n\t\t\t"
                       "-d: return immediately (do not wait for completion).\n\t\t\t"
                       "-z: dump in kdump-compressed format, with zlib compression.\n\t\t\t"
                       "-l: dump in kdump-compressed format, with lzo compression.\n\t\t\t"
                       "-s: dump in kdump-compressed format, with snappy compression.\n\t\t\t"
-                      "-w: dump in Windows crashdump format (can be used instead of ELF-dump converting),\n\t\t\t"
-                      "    for Windows x64 guests with vmcoreinfo driver only.\n\t\t\t"
                       "begin: the starting physical address.\n\t\t\t"
                       "length: the memory size, in bytes.",
         .cmd        = hmp_dump_guest_memory,
     },
 
+
 STEXI
 @item dump-guest-memory [-p] @var{filename} @var{begin} @var{length}
-@item dump-guest-memory [-z|-l|-s|-w] @var{filename}
+@item dump-guest-memory [-z|-l|-s] @var{filename}
 @findex dump-guest-memory
 Dump guest memory to @var{protocol}. The file can be processed with crash or
-gdb. Without -z|-l|-s|-w, the dump format is ELF.
+gdb. Without -z|-l|-s, the dump format is ELF.
         -p: do paging to get guest's memory mapping.
         -z: dump in kdump-compressed format, with zlib compression.
         -l: dump in kdump-compressed format, with lzo compression.
         -s: dump in kdump-compressed format, with snappy compression.
-        -w: dump in Windows crashdump format (can be used instead of ELF-dump converting),
-            for Windows x64 guests with vmcoreinfo driver only
   filename: dump file name.
      begin: the starting physical address. It's optional, and should be
             specified together with length.
@@ -1345,6 +1255,7 @@ ETEXI
         .params     = "[-n] [[<domain>:]<bus>:]<slot>\n"
                       "[file=file][,if=type][,bus=n]\n"
                       "[,unit=m][,media=d][,index=i]\n"
+                      "[,cyls=c,heads=h,secs=s[,trans=t]]\n"
                       "[,snapshot=on|off][,cache=on|off]\n"
                       "[,readonly=on|off][,copy-on-read=on|off]",
         .help       = "add drive to PCI storage controller",
@@ -1736,8 +1647,7 @@ ETEXI
 STEXI
 @item block_set_io_throttle @var{device} @var{bps} @var{bps_rd} @var{bps_wr} @var{iops} @var{iops_rd} @var{iops_wr}
 @findex block_set_io_throttle
-Change I/O throttle limits for a block drive to @var{bps} @var{bps_rd} @var{bps_wr} @var{iops} @var{iops_rd} @var{iops_wr}.
-@var{device} can be a block device name, a qdev ID or a QOM path.
+Change I/O throttle limits for a block drive to @var{bps} @var{bps_rd} @var{bps_wr} @var{iops} @var{iops_rd} @var{iops_wr}
 ETEXI
 
     {
@@ -1873,16 +1783,14 @@ ETEXI
         .name       = "cpu-add",
         .args_type  = "id:i",
         .params     = "id",
-        .help       = "add cpu (deprecated, use device_add instead)",
+        .help       = "add cpu",
         .cmd        = hmp_cpu_add,
     },
 
 STEXI
 @item cpu-add @var{id}
 @findex cpu-add
-Add CPU with id @var{id}.  This command is deprecated, please
-+use @code{device_add} instead. For details, refer to
-'docs/cpu-hotplug.rst'.
+Add CPU with id @var{id}
 ETEXI
 
     {
@@ -1891,7 +1799,6 @@ ETEXI
         .params     = "path",
         .help       = "list QOM properties",
         .cmd        = hmp_qom_list,
-        .flags      = "p",
     },
 
 STEXI
@@ -1905,7 +1812,6 @@ ETEXI
         .params     = "path property value",
         .help       = "set QOM property",
         .cmd        = hmp_qom_set,
-        .flags      = "p",
     },
 
 STEXI
@@ -1920,7 +1826,6 @@ ETEXI
         .help       = "show various information about the system state",
         .cmd        = hmp_info_help,
         .sub_table  = info_cmds,
-        .flags      = "p",
     },
 
 STEXI

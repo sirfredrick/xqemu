@@ -27,12 +27,10 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/units.h"
 #include "qemu/log.h"
 #include "hw/misc/auxbus.h"
 #include "hw/i2c/i2c.h"
 #include "monitor/monitor.h"
-#include "qapi/error.h"
 
 #ifndef DEBUG_AUX
 #define DEBUG_AUX 0
@@ -64,27 +62,20 @@ static void aux_bus_class_init(ObjectClass *klass, void *data)
 AUXBus *aux_init_bus(DeviceState *parent, const char *name)
 {
     AUXBus *bus;
-    Object *auxtoi2c;
 
     bus = AUX_BUS(qbus_create(TYPE_AUX_BUS, parent, name));
-    auxtoi2c = object_new_with_props(TYPE_AUXTOI2C, OBJECT(bus), "i2c",
-                                     &error_abort, NULL);
-    qdev_set_parent_bus(DEVICE(auxtoi2c), BUS(bus));
-
-    bus->bridge = AUXTOI2C(auxtoi2c);
+    bus->bridge = AUXTOI2C(qdev_create(BUS(bus), TYPE_AUXTOI2C));
 
     /* Memory related. */
     bus->aux_io = g_malloc(sizeof(*bus->aux_io));
-    memory_region_init(bus->aux_io, OBJECT(bus), "aux-io", 1 * MiB);
+    memory_region_init(bus->aux_io, OBJECT(bus), "aux-io", (1 << 20));
     address_space_init(&bus->aux_addr_space, bus->aux_io, "aux-io");
     return bus;
 }
 
-void aux_map_slave(AUXSlave *aux_dev, hwaddr addr)
+static void aux_bus_map_device(AUXBus *bus, AUXSlave *dev, hwaddr addr)
 {
-    DeviceState *dev = DEVICE(aux_dev);
-    AUXBus *bus = AUX_BUS(qdev_get_parent_bus(dev));
-    memory_region_add_subregion(bus->aux_io, addr, aux_dev->mmio);
+    memory_region_add_subregion(bus->aux_io, addr, dev->mmio);
 }
 
 static bool aux_bus_is_bridge(AUXBus *bus, DeviceState *dev)
@@ -268,13 +259,15 @@ static void aux_slave_dev_print(Monitor *mon, DeviceState *dev, int indent)
                    memory_region_size(s->mmio));
 }
 
-DeviceState *aux_create_slave(AUXBus *bus, const char *type)
+DeviceState *aux_create_slave(AUXBus *bus, const char *type, uint32_t addr)
 {
     DeviceState *dev;
 
     dev = DEVICE(object_new(type));
     assert(dev);
     qdev_set_parent_bus(dev, &bus->qbus);
+    qdev_init_nofail(dev);
+    aux_bus_map_device(AUX_BUS(qdev_get_parent_bus(dev)), AUX_SLAVE(dev), addr);
     return dev;
 }
 

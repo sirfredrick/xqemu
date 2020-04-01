@@ -51,9 +51,9 @@ enum QIOChannelFeature {
 typedef enum QIOChannelShutdown QIOChannelShutdown;
 
 enum QIOChannelShutdown {
-    QIO_CHANNEL_SHUTDOWN_READ = 1,
-    QIO_CHANNEL_SHUTDOWN_WRITE = 2,
-    QIO_CHANNEL_SHUTDOWN_BOTH = 3,
+    QIO_CHANNEL_SHUTDOWN_BOTH,
+    QIO_CHANNEL_SHUTDOWN_READ,
+    QIO_CHANNEL_SHUTDOWN_WRITE,
 };
 
 typedef gboolean (*QIOChannelFunc)(QIOChannel *ioc,
@@ -739,13 +739,10 @@ void qio_channel_detach_aio_context(QIOChannel *ioc);
  * addition, no two coroutine can be waiting on the same condition
  * and channel at the same time.
  *
- * This must only be called from coroutine context. It is safe to
- * reenter the coroutine externally while it is waiting; in this
- * case the function will return even if @condition is not yet
- * available.
+ * This must only be called from coroutine context
  */
-void coroutine_fn qio_channel_yield(QIOChannel *ioc,
-                                    GIOCondition condition);
+void qio_channel_yield(QIOChannel *ioc,
+                       GIOCondition condition);
 
 /**
  * qio_channel_wait:

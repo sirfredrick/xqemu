@@ -23,47 +23,6 @@
 #include "exec/gdbstub.h"
 #include "qemu/log.h"
 
-enum {
-  xtRegisterTypeArRegfile = 1,  /* Register File ar0..arXX.  */
-  xtRegisterTypeSpecialReg,     /* CPU states, such as PS, Booleans, (rsr).  */
-  xtRegisterTypeUserReg,        /* User defined registers (rur).  */
-  xtRegisterTypeTieRegfile,     /* User define register files.  */
-  xtRegisterTypeTieState,       /* TIE States (mapped on user regs).  */
-  xtRegisterTypeMapped,         /* Mapped on Special Registers.  */
-  xtRegisterTypeUnmapped,       /* Special case of masked registers.  */
-  xtRegisterTypeWindow,         /* Live window registers (a0..a15).  */
-  xtRegisterTypeVirtual,        /* PC, FP.  */
-  xtRegisterTypeUnknown
-};
-
-#define XTENSA_REGISTER_FLAGS_PRIVILEGED        0x0001
-#define XTENSA_REGISTER_FLAGS_READABLE          0x0002
-#define XTENSA_REGISTER_FLAGS_WRITABLE          0x0004
-#define XTENSA_REGISTER_FLAGS_VOLATILE          0x0008
-
-void xtensa_count_regs(const XtensaConfig *config,
-                       unsigned *n_regs, unsigned *n_core_regs)
-{
-    unsigned i;
-    bool count_core_regs = true;
-
-    for (i = 0; config->gdb_regmap.reg[i].targno >= 0; ++i) {
-        if (config->gdb_regmap.reg[i].type != xtRegisterTypeTieState &&
-            config->gdb_regmap.reg[i].type != xtRegisterTypeMapped &&
-            config->gdb_regmap.reg[i].type != xtRegisterTypeUnmapped) {
-            ++*n_regs;
-            if (count_core_regs) {
-                if ((config->gdb_regmap.reg[i].flags &
-                     XTENSA_REGISTER_FLAGS_PRIVILEGED) == 0) {
-                    ++*n_core_regs;
-                } else {
-                    count_core_regs = false;
-                }
-            }
-        }
-    }
-}
-
 int xtensa_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
 {
     XtensaCPU *cpu = XTENSA_CPU(cs);
@@ -81,21 +40,21 @@ int xtensa_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
     }
 
     switch (reg->type) {
-    case xtRegisterTypeVirtual: /*pc*/
+    case 9: /*pc*/
         return gdb_get_reg32(mem_buf, env->pc);
 
-    case xtRegisterTypeArRegfile: /*ar*/
+    case 1: /*ar*/
         xtensa_sync_phys_from_window(env);
         return gdb_get_reg32(mem_buf, env->phys_regs[(reg->targno & 0xff)
                                                      % env->config->nareg]);
 
-    case xtRegisterTypeSpecialReg: /*SR*/
+    case 2: /*SR*/
         return gdb_get_reg32(mem_buf, env->sregs[reg->targno & 0xff]);
 
-    case xtRegisterTypeUserReg: /*UR*/
+    case 3: /*UR*/
         return gdb_get_reg32(mem_buf, env->uregs[reg->targno & 0xff]);
 
-    case xtRegisterTypeTieRegfile: /*f*/
+    case 4: /*f*/
         i = reg->targno & 0x0f;
         switch (reg->size) {
         case 4:
@@ -110,7 +69,7 @@ int xtensa_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
             return reg->size;
         }
 
-    case xtRegisterTypeWindow: /*a*/
+    case 8: /*a*/
         return gdb_get_reg32(mem_buf, env->regs[reg->targno & 0x0f]);
 
     default:
@@ -140,24 +99,24 @@ int xtensa_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
     tmp = ldl_p(mem_buf);
 
     switch (reg->type) {
-    case xtRegisterTypeVirtual: /*pc*/
+    case 9: /*pc*/
         env->pc = tmp;
         break;
 
-    case xtRegisterTypeArRegfile: /*ar*/
+    case 1: /*ar*/
         env->phys_regs[(reg->targno & 0xff) % env->config->nareg] = tmp;
         xtensa_sync_window_from_phys(env);
         break;
 
-    case xtRegisterTypeSpecialReg: /*SR*/
+    case 2: /*SR*/
         env->sregs[reg->targno & 0xff] = tmp;
         break;
 
-    case xtRegisterTypeUserReg: /*UR*/
+    case 3: /*UR*/
         env->uregs[reg->targno & 0xff] = tmp;
         break;
 
-    case xtRegisterTypeTieRegfile: /*f*/
+    case 4: /*f*/
         switch (reg->size) {
         case 4:
             env->fregs[reg->targno & 0x0f].f32[FP_F32_LOW] = make_float32(tmp);
@@ -171,7 +130,7 @@ int xtensa_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
             return reg->size;
         }
 
-    case xtRegisterTypeWindow: /*a*/
+    case 8: /*a*/
         env->regs[reg->targno & 0x0f] = tmp;
         break;
 

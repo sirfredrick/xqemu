@@ -19,28 +19,18 @@
 #ifndef HW_SIFIVE_U_H
 #define HW_SIFIVE_U_H
 
-#include "hw/net/cadence_gem.h"
+#define TYPE_SIFIVE_U "riscv.sifive_u"
 
-#define TYPE_RISCV_U_SOC "riscv.sifive.u.soc"
-#define RISCV_U_SOC(obj) \
-    OBJECT_CHECK(SiFiveUSoCState, (obj), TYPE_RISCV_U_SOC)
-
-typedef struct SiFiveUSoCState {
-    /*< private >*/
-    SysBusDevice parent_obj;
-
-    /*< public >*/
-    RISCVHartArrayState cpus;
-    DeviceState *plic;
-    CadenceGEMState gem;
-} SiFiveUSoCState;
+#define SIFIVE_U(obj) \
+    OBJECT_CHECK(SiFiveUState, (obj), TYPE_SIFIVE_U)
 
 typedef struct SiFiveUState {
     /*< private >*/
     SysBusDevice parent_obj;
 
     /*< public >*/
-    SiFiveUSoCState soc;
+    RISCVHartArrayState soc;
+    DeviceState *plic;
     void *fdt;
     int fdt_size;
 } SiFiveUState;
@@ -52,25 +42,18 @@ enum {
     SIFIVE_U_PLIC,
     SIFIVE_U_UART0,
     SIFIVE_U_UART1,
-    SIFIVE_U_DRAM,
-    SIFIVE_U_GEM
+    SIFIVE_U_DRAM
 };
 
 enum {
     SIFIVE_U_UART0_IRQ = 3,
-    SIFIVE_U_UART1_IRQ = 4,
-    SIFIVE_U_GEM_IRQ = 0x35
-};
-
-enum {
-    SIFIVE_U_CLOCK_FREQ = 1000000000,
-    SIFIVE_U_GEM_CLOCK_FREQ = 125000000
+    SIFIVE_U_UART1_IRQ = 4
 };
 
 #define SIFIVE_U_PLIC_HART_CONFIG "MS"
-#define SIFIVE_U_PLIC_NUM_SOURCES 54
+#define SIFIVE_U_PLIC_NUM_SOURCES 127
 #define SIFIVE_U_PLIC_NUM_PRIORITIES 7
-#define SIFIVE_U_PLIC_PRIORITY_BASE 0x04
+#define SIFIVE_U_PLIC_PRIORITY_BASE 0x0
 #define SIFIVE_U_PLIC_PENDING_BASE 0x1000
 #define SIFIVE_U_PLIC_ENABLE_BASE 0x2000
 #define SIFIVE_U_PLIC_ENABLE_STRIDE 0x80

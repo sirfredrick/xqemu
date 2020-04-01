@@ -26,6 +26,9 @@
 #include <Hypervisor/hv.h>
 #include <Hypervisor/hv_vmx.h>
 
+#include "exec/address-spaces.h"
+#include "exec/exec-all.h"
+#include "exec/ioport.h"
 #include "hw/i386/apic_internal.h"
 #include "hw/boards.h"
 #include "qemu/main-loop.h"

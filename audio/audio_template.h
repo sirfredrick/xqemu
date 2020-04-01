@@ -299,42 +299,11 @@ static HW *glue (audio_pcm_hw_add_new_, TYPE) (struct audsettings *as)
     return NULL;
 }
 
-AudiodevPerDirectionOptions *glue(audio_get_pdo_, TYPE)(Audiodev *dev)
-{
-    switch (dev->driver) {
-    case AUDIODEV_DRIVER_NONE:
-        return dev->u.none.TYPE;
-    case AUDIODEV_DRIVER_ALSA:
-        return qapi_AudiodevAlsaPerDirectionOptions_base(dev->u.alsa.TYPE);
-    case AUDIODEV_DRIVER_COREAUDIO:
-        return qapi_AudiodevCoreaudioPerDirectionOptions_base(
-            dev->u.coreaudio.TYPE);
-    case AUDIODEV_DRIVER_DSOUND:
-        return dev->u.dsound.TYPE;
-    case AUDIODEV_DRIVER_OSS:
-        return qapi_AudiodevOssPerDirectionOptions_base(dev->u.oss.TYPE);
-    case AUDIODEV_DRIVER_PA:
-        return qapi_AudiodevPaPerDirectionOptions_base(dev->u.pa.TYPE);
-    case AUDIODEV_DRIVER_SDL:
-        return dev->u.sdl.TYPE;
-    case AUDIODEV_DRIVER_SPICE:
-        return dev->u.spice.TYPE;
-    case AUDIODEV_DRIVER_WAV:
-        return dev->u.wav.TYPE;
-
-    case AUDIODEV_DRIVER__MAX:
-        break;
-    }
-    abort();
-}
-
 static HW *glue (audio_pcm_hw_add_, TYPE) (struct audsettings *as)
 {
     HW *hw;
-    AudioState *s = &glob_audio_state;
-    AudiodevPerDirectionOptions *pdo = glue(audio_get_pdo_, TYPE)(s->dev);
 
-    if (pdo->fixed_settings) {
+    if (glue (conf.fixed_, TYPE).enabled && glue (conf.fixed_, TYPE).greedy) {
         hw = glue (audio_pcm_hw_add_new_, TYPE) (as);
         if (hw) {
             return hw;
@@ -362,11 +331,9 @@ static SW *glue (audio_pcm_create_voice_pair_, TYPE) (
     SW *sw;
     HW *hw;
     struct audsettings hw_as;
-    AudioState *s = &glob_audio_state;
-    AudiodevPerDirectionOptions *pdo = glue(audio_get_pdo_, TYPE)(s->dev);
 
-    if (pdo->fixed_settings) {
-        hw_as = audiodev_to_audsettings(pdo);
+    if (glue (conf.fixed_, TYPE).enabled) {
+        hw_as = glue (conf.fixed_, TYPE).settings;
     }
     else {
         hw_as = *as;
@@ -431,7 +398,6 @@ SW *glue (AUD_open_, TYPE) (
     )
 {
     AudioState *s = &glob_audio_state;
-    AudiodevPerDirectionOptions *pdo = glue(audio_get_pdo_, TYPE)(s->dev);
 
     if (audio_bug(__func__, !card || !name || !callback_fn || !as)) {
         dolog ("card=%p name=%p callback_fn=%p as=%p\n",
@@ -456,7 +422,7 @@ SW *glue (AUD_open_, TYPE) (
         return sw;
     }
 
-    if (!pdo->fixed_settings && sw) {
+    if (!glue (conf.fixed_, TYPE).enabled && sw) {
         glue (AUD_close_, TYPE) (card, sw);
         sw = NULL;
     }

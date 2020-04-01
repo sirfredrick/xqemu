@@ -105,8 +105,7 @@ static void kvm_s390_stattrib_synchronize(S390StAttribState *sa)
     KVMS390StAttribState *sas = KVM_S390_STATTRIB(sa);
     MachineState *machine = MACHINE(qdev_get_machine());
     unsigned long max = machine->maxram_size / TARGET_PAGE_SIZE;
-    /* We do not need to reach the maximum buffer size allowed */
-    unsigned long cx, len = KVM_S390_SKEYS_MAX / 2;
+    unsigned long cx, len = 1 << 19;
     int r;
     struct kvm_s390_cmma_log clog = {
         .flags = 0,

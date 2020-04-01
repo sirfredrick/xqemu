@@ -5,28 +5,26 @@
  * Copyright (c) 2015 Jannik Vogel
  * Copyright (c) 2018 Matt Borgerson
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 or
+ * (at your option) version 3 of the License.
  *
- * This library is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
-/* PTIMER - time measurement and time-based alarms */
+/* PIMTER - time measurement and time-based alarms */
 static uint64_t ptimer_get_clock(NV2AState *d)
 {
-    return muldiv64(muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
-                             d->pramdac.core_clock_freq,
-                             NANOSECONDS_PER_SECOND),
-                    d->ptimer.denominator,
-                    d->ptimer.numerator);
+    return muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
+                    d->pramdac.core_clock_freq * d->ptimer.numerator,
+                    NANOSECONDS_PER_SECOND * d->ptimer.denominator);
 }
 
 uint64_t ptimer_read(void *opaque, hwaddr addr, unsigned int size)

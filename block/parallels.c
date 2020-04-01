@@ -31,7 +31,6 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "block/block_int.h"
-#include "block/qdict.h"
 #include "sysemu/block-backend.h"
 #include "qemu/module.h"
 #include "qemu/option.h"
@@ -220,20 +219,22 @@ static int64_t allocate_clusters(BlockDriverState *bs, int64_t sector_num,
     if (bs->backing) {
         int64_t nb_cow_sectors = to_allocate * s->tracks;
         int64_t nb_cow_bytes = nb_cow_sectors << BDRV_SECTOR_BITS;
-        QEMUIOVector qiov =
-            QEMU_IOVEC_INIT_BUF(qiov, qemu_blockalign(bs, nb_cow_bytes),
-                                nb_cow_bytes);
+        QEMUIOVector qiov;
+        struct iovec iov = {
+            .iov_len = nb_cow_bytes,
+            .iov_base = qemu_blockalign(bs, nb_cow_bytes)
+        };
+        qemu_iovec_init_external(&qiov, &iov, 1);
 
-        ret = bdrv_co_preadv(bs->backing, idx * s->tracks * BDRV_SECTOR_SIZE,
-                             nb_cow_bytes, &qiov, 0);
+        ret = bdrv_co_readv(bs->backing, idx * s->tracks, nb_cow_sectors,
+                            &qiov);
         if (ret < 0) {
-            qemu_vfree(qemu_iovec_buf(&qiov));
+            qemu_vfree(iov.iov_base);
             return ret;
         }
 
-        ret = bdrv_co_pwritev(bs->file, s->data_end * BDRV_SECTOR_SIZE,
-                              nb_cow_bytes, &qiov, 0);
-        qemu_vfree(qemu_iovec_buf(&qiov));
+        ret = bdrv_co_writev(bs->file, s->data_end, nb_cow_sectors, &qiov);
+        qemu_vfree(iov.iov_base);
         if (ret < 0) {
             return ret;
         }
@@ -310,15 +311,13 @@ static int coroutine_fn parallels_co_block_status(BlockDriverState *bs,
 }
 
 static coroutine_fn int parallels_co_writev(BlockDriverState *bs,
-                                            int64_t sector_num, int nb_sectors,
-                                            QEMUIOVector *qiov, int flags)
+        int64_t sector_num, int nb_sectors, QEMUIOVector *qiov)
 {
     BDRVParallelsState *s = bs->opaque;
     uint64_t bytes_done = 0;
     QEMUIOVector hd_qiov;
     int ret = 0;
 
-    assert(!flags);
     qemu_iovec_init(&hd_qiov, qiov->niov);
 
     while (nb_sectors > 0) {
@@ -338,8 +337,7 @@ static coroutine_fn int parallels_co_writev(BlockDriverState *bs,
         qemu_iovec_reset(&hd_qiov);
         qemu_iovec_concat(&hd_qiov, qiov, bytes_done, nbytes);
 
-        ret = bdrv_co_pwritev(bs->file, position * BDRV_SECTOR_SIZE, nbytes,
-                              &hd_qiov, 0);
+        ret = bdrv_co_writev(bs->file, position, n, &hd_qiov);
         if (ret < 0) {
             break;
         }
@@ -378,8 +376,7 @@ static coroutine_fn int parallels_co_readv(BlockDriverState *bs,
 
         if (position < 0) {
             if (bs->backing) {
-                ret = bdrv_co_preadv(bs->backing, sector_num * BDRV_SECTOR_SIZE,
-                                     nbytes, &hd_qiov, 0);
+                ret = bdrv_co_readv(bs->backing, sector_num, n, &hd_qiov);
                 if (ret < 0) {
                     break;
                 }
@@ -387,8 +384,7 @@ static coroutine_fn int parallels_co_readv(BlockDriverState *bs,
                 qemu_iovec_memset(&hd_qiov, 0, 0, nbytes);
             }
         } else {
-            ret = bdrv_co_preadv(bs->file, position * BDRV_SECTOR_SIZE, nbytes,
-                                 &hd_qiov, 0);
+            ret = bdrv_co_readv(bs->file, position, n, &hd_qiov);
             if (ret < 0) {
                 break;
             }
@@ -617,7 +613,8 @@ static int coroutine_fn parallels_co_create_opts(const char *filename,
     BlockdevCreateOptions *create_options = NULL;
     Error *local_err = NULL;
     BlockDriverState *bs = NULL;
-    QDict *qdict;
+    QDict *qdict = NULL;
+    QObject *qobj;
     Visitor *v;
     int ret;
 
@@ -653,12 +650,15 @@ static int coroutine_fn parallels_co_create_opts(const char *filename,
     qdict_put_str(qdict, "driver", "parallels");
     qdict_put_str(qdict, "file", bs->node_name);
 
-    v = qobject_input_visitor_new_flat_confused(qdict, errp);
-    if (!v) {
+    qobj = qdict_crumple(qdict, errp);
+    QDECREF(qdict);
+    qdict = qobject_to(QDict, qobj);
+    if (qdict == NULL) {
         ret = -EINVAL;
         goto done;
     }
 
+    v = qobject_input_visitor_new_keyval(QOBJECT(qdict));
     visit_type_BlockdevCreateOptions(v, NULL, &create_options, &local_err);
     visit_free(v);
 
@@ -682,7 +682,7 @@ static int coroutine_fn parallels_co_create_opts(const char *filename,
     ret = 0;
 
 done:
-    qobject_unref(qdict);
+    QDECREF(qdict);
     bdrv_unref(bs);
     qapi_free_BlockdevCreateOptions(create_options);
     return ret;

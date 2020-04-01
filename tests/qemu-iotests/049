@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Check qemu-img option parsing
 #
@@ -24,6 +24,7 @@ owner=kwolf@redhat.com
 seq=`basename $0`
 echo "QA output created by $seq"
 
+here=`pwd`
 status=1	# failure is the default!
 
 _cleanup()
@@ -40,13 +41,13 @@ _supported_fmt qcow2
 _supported_proto file
 _supported_os Linux
 
-filter_test_dir()
+function filter_test_dir()
 {
     sed -e "s#$IMGPROTO:$TEST_DIR#TEST_DIR#g" \
         -e "s#$TEST_DIR#TEST_DIR#g"
 }
 
-test_qemu_img()
+function test_qemu_img()
 {
     echo qemu-img "$@" | filter_test_dir
     $QEMU_IMG "$@" 2>&1 | filter_test_dir

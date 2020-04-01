@@ -10,48 +10,54 @@
 #include "qemu/osdep.h"
 #include "libqtest.h"
 #include "qemu/bswap.h"
-#include "libqos/qgraph.h"
-#include "libqos/pci.h"
+#include "libqos/libqos-pc.h"
+#include "libqos/libqos-spapr.h"
 
-typedef struct QMegasas QMegasas;
-
-struct QMegasas {
-    QOSGraphObject obj;
-    QPCIDevice dev;
-};
-
-static void *megasas_get_driver(void *obj, const char *interface)
+static QOSState *qmegasas_start(const char *extra_opts)
 {
-    QMegasas *megasas = obj;
+    QOSState *qs;
+    const char *arch = qtest_get_arch();
+    const char *cmd = "-drive id=hd0,if=none,file=null-co://,format=raw "
+                      "-device megasas,id=scsi0,addr=04.0 "
+                      "-device scsi-hd,bus=scsi0.0,drive=hd0 %s";
 
-    if (!g_strcmp0(interface, "pci-device")) {
-        return &megasas->dev;
+    if (strcmp(arch, "i386") == 0 || strcmp(arch, "x86_64") == 0) {
+        qs = qtest_pc_boot(cmd, extra_opts ? : "");
+        global_qtest = qs->qts;
+        return qs;
     }
 
-    fprintf(stderr, "%s not present in megasas\n", interface);
-    g_assert_not_reached();
+    g_printerr("virtio-scsi tests are only available on x86 or ppc64\n");
+    exit(EXIT_FAILURE);
 }
 
-static void *megasas_create(void *pci_bus, QGuestAllocator *alloc, void *addr)
+static void qmegasas_stop(QOSState *qs)
 {
-    QMegasas *megasas = g_new0(QMegasas, 1);
-    QPCIBus *bus = pci_bus;
+    qtest_shutdown(qs);
+}
 
-    qpci_device_init(&megasas->dev, bus, addr);
-    megasas->obj.get_driver = megasas_get_driver;
+/* Tests only initialization so far. TODO: Replace with functional tests */
+static void pci_nop(void)
+{
+    QOSState *qs;
 
-    return &megasas->obj;
+    qs = qmegasas_start(NULL);
+    qmegasas_stop(qs);
 }
 
 /* This used to cause a NULL pointer dereference.  */
-static void megasas_pd_get_info_fuzz(void *obj, void *data, QGuestAllocator *alloc)
+static void megasas_pd_get_info_fuzz(void)
 {
-    QMegasas *megasas = obj;
-    QPCIDevice *dev = &megasas->dev;
+    QPCIDevice *dev;
+    QOSState *qs;
     QPCIBar bar;
     uint32_t context[256];
     uint64_t context_pa;
     int i;
+
+    qs = qmegasas_start(NULL);
+    dev = qpci_device_find(qs->pcibus, QPCI_DEVFN(4,0));
+    g_assert(dev != NULL);
 
     qpci_device_enable(dev);
     bar = qpci_iomap(dev, 0, NULL);
@@ -65,25 +71,19 @@ static void megasas_pd_get_info_fuzz(void *obj, void *data, QGuestAllocator *all
     context[6] = cpu_to_le32(0x02020000);
     context[7] = cpu_to_le32(0);
 
-    context_pa = guest_alloc(alloc, sizeof(context));
+    context_pa = qmalloc(qs, sizeof(context));
     memwrite(context_pa, context, sizeof(context));
     qpci_io_writel(dev, bar, 0x40, context_pa);
+
+    g_free(dev);
+    qmegasas_stop(qs);
 }
 
-static void megasas_register_nodes(void)
+int main(int argc, char **argv)
 {
-    QOSGraphEdgeOptions opts = {
-        .extra_device_opts = "addr=04.0,id=scsi0",
-        .before_cmd_line = "-drive id=drv0,if=none,file=null-co://,format=raw",
-        .after_cmd_line = "-device scsi-hd,bus=scsi0.0,drive=drv0",
-    };
+    g_test_init(&argc, &argv, NULL);
+    qtest_add_func("/megasas/pci/nop", pci_nop);
+    qtest_add_func("/megasas/dcmd/pd-get-info/fuzz", megasas_pd_get_info_fuzz);
 
-    add_qpci_address(&opts, &(QPCIAddress) { .devfn = QPCI_DEVFN(4, 0) });
-
-    qos_node_create_driver("megasas", megasas_create);
-    qos_node_consumes("megasas", "pci-bus", &opts);
-    qos_node_produces("megasas", "pci-device");
-
-    qos_add_test("dcmd/pd-get-info/fuzz", "megasas", megasas_pd_get_info_fuzz, NULL);
+    return g_test_run();
 }
-libqos_init(megasas_register_nodes);

@@ -77,8 +77,7 @@ static inline bool dma_memory_valid(AddressSpace *as,
                                     DMADirection dir)
 {
     return address_space_access_valid(as, addr, len,
-                                      dir == DMA_DIRECTION_FROM_DEVICE,
-                                      MEMTXATTRS_UNSPECIFIED);
+                                      dir == DMA_DIRECTION_FROM_DEVICE);
 }
 
 static inline int dma_memory_rw_relaxed(AddressSpace *as, dma_addr_t addr,
@@ -133,8 +132,7 @@ static inline void *dma_memory_map(AddressSpace *as,
     hwaddr xlen = *len;
     void *p;
 
-    p = address_space_map(as, addr, &xlen, dir == DMA_DIRECTION_FROM_DEVICE,
-                          MEMTXATTRS_UNSPECIFIED);
+    p = address_space_map(as, addr, &xlen, dir == DMA_DIRECTION_FROM_DEVICE);
     *len = xlen;
     return p;
 }

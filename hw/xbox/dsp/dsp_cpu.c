@@ -26,8 +26,6 @@
 #include <string.h>
 #include <assert.h>
 
-#include "qemu/osdep.h"
-#include "qemu/bswap.h"
 #include "dsp_cpu.h"
 
 #define TRACE_DSP_DISASM 0
@@ -230,7 +228,7 @@ static const OpcodeEntry nonparallel_opcodes[] = {
     { "00001100000111111111gggd", "cmpu S1, S2", dis_cmpu, emu_cmpu },
     { "000000000000001000000000", "debug", NULL, NULL },
     { "00000000000000110000CCCC", "debugcc", NULL, NULL },
-    { "00000000000000000000101d", "dec D", NULL /*dis_dec*/, emu_dec },
+    { "00000000000000000000101d", "dec D", NULL, NULL, /*dis_dec, emu_dec*/ },
     { "000000011000000001JJd000", "div S, D", dis_div, emu_div },
     { "000000010010010s1sdkQQQQ", "dmac S1, S2, D", NULL, NULL },
     { "0000011001MMMRRR0S000000", "do [X or Y]:ea, expr", dis_do_ea, emu_do_ea, match_MMMRRR },
@@ -251,7 +249,7 @@ static const OpcodeEntry nonparallel_opcodes[] = {
     { "0000110000011010100sSSSD", "extractu S1, S2, D", NULL, NULL },
     { "0000110000011000100s000D", "extractu #CO, S2, D", NULL, NULL },
     { "000000000000000000000101", "ill", NULL, emu_illegal },
-    { "00000000000000000000100d", "inc D", NULL, emu_inc },
+    { "00000000000000000000100d", "inc D", NULL, NULL },
     { "00001100000110110qqqSSSD", "insert S1, S2, D", NULL, NULL },
     { "00001100000110010qqq000D", "insert #CO, S2, D", NULL, NULL },
     { "00001110CCCCaaaaaaaaaaaa", "jcc xxx", dis_jcc_imm, emu_jcc_imm },
@@ -959,7 +957,7 @@ static uint32_t read_memory_p(dsp_core_t* dsp, uint32_t address)
 {
     assert((address & 0xFF000000) == 0);
     assert(address < DSP_PRAM_SIZE);
-    uint32_t r = ldl_le_p(&dsp->pram[address]);
+    uint32_t r = dsp->pram[address];
     assert((r & 0xFF000000) == 0);
     return r;
 }
@@ -974,6 +972,8 @@ uint32_t dsp56k_read_memory(dsp_core_t* dsp, int space, uint32_t address)
             return dsp->read_peripheral(dsp, address);
         } else if (address >= DSP_MIXBUFFER_BASE && address < DSP_MIXBUFFER_BASE+DSP_MIXBUFFER_SIZE) {
             return dsp->mixbuffer[address-DSP_MIXBUFFER_BASE];
+        } else if (address >= DSP_MIXBUFFER_READ_BASE && address < DSP_MIXBUFFER_READ_BASE+DSP_MIXBUFFER_SIZE) {
+            return dsp->mixbuffer[address-DSP_MIXBUFFER_READ_BASE];
         } else {
             assert(address < DSP_XRAM_SIZE);
             return dsp->xram[address];
@@ -1012,6 +1012,8 @@ static void write_memory_raw(dsp_core_t* dsp, int space, uint32_t address, uint3
             return;
         } else if (address >= DSP_MIXBUFFER_BASE && address < DSP_MIXBUFFER_BASE+DSP_MIXBUFFER_SIZE) {
             dsp->mixbuffer[address-DSP_MIXBUFFER_BASE] = value;
+        } else if (address >= DSP_MIXBUFFER_READ_BASE && address < DSP_MIXBUFFER_READ_BASE+DSP_MIXBUFFER_SIZE) {
+            dsp->mixbuffer[address-DSP_MIXBUFFER_READ_BASE] = value;
         } else {
             assert(address < DSP_XRAM_SIZE);
             dsp->xram[address] = value;
@@ -1021,7 +1023,7 @@ static void write_memory_raw(dsp_core_t* dsp, int space, uint32_t address, uint3
         dsp->yram[address] = value;
     } else if (space == DSP_SPACE_P) {
         assert(address < DSP_PRAM_SIZE);
-        stl_le_p(&dsp->pram[address], value);
+        dsp->pram[address] = value;
     } else {
         assert(false);
     }

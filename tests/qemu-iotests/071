@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Test case for the QMP blkdebug and blkverify interfaces
 #
@@ -24,6 +24,7 @@ owner=mreitz@redhat.com
 seq="$(basename $0)"
 echo "QA output created by $seq"
 
+here="$PWD"
 status=1	# failure is the default!
 
 _cleanup()
@@ -40,14 +41,14 @@ _supported_fmt qcow2
 _supported_proto file
 _supported_os Linux
 
-do_run_qemu()
+function do_run_qemu()
 {
     echo Testing: "$@" | _filter_imgfmt
     $QEMU -nographic -qmp stdio -serial none "$@"
     echo
 }
 
-run_qemu()
+function run_qemu()
 {
     do_run_qemu "$@" 2>&1 | _filter_testdir | _filter_qemu | _filter_qmp | _filter_qemu_io
 }

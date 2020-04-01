@@ -1,11 +1,11 @@
 Launching VM...
 Adding IOThread...
-{"return": {}}
+{u'return': {}}
 Adding blockdevs...
-{"return": {}}
-{"return": {}}
+{u'return': {}}
+{u'return': {}}
 Setting iothread...
-{"return": {}}
-{"return": {}}
+{u'return': {}}
+{u'return': {}}
 Creating external snapshots...
-{"return": {}}
+{u'return': {}}

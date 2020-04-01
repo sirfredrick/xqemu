@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Test case for qemu-io -c map and qemu-img map
 #
@@ -24,6 +24,7 @@ owner=mreitz@redhat.com
 seq=$(basename $0)
 echo "QA output created by $seq"
 
+here=$PWD
 status=1    # failure is the default!
 
 _cleanup()

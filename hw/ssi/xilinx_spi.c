@@ -319,9 +319,9 @@ static const MemoryRegionOps spi_ops = {
     }
 };
 
-static void xilinx_spi_realize(DeviceState *dev, Error **errp)
+static int xilinx_spi_init(SysBusDevice *sbd)
 {
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
+    DeviceState *dev = DEVICE(sbd);
     XilinxSPI *s = XILINX_SPI(dev);
     int i;
 
@@ -344,6 +344,8 @@ static void xilinx_spi_realize(DeviceState *dev, Error **errp)
 
     fifo8_create(&s->tx_fifo, FIFO_CAPACITY);
     fifo8_create(&s->rx_fifo, FIFO_CAPACITY);
+
+    return 0;
 }
 
 static const VMStateDescription vmstate_xilinx_spi = {
@@ -366,8 +368,9 @@ static Property xilinx_spi_properties[] = {
 static void xilinx_spi_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
 
-    dc->realize = xilinx_spi_realize;
+    k->init = xilinx_spi_init;
     dc->reset = xlx_spi_reset;
     dc->props = xilinx_spi_properties;
     dc->vmsd = &vmstate_xilinx_spi;

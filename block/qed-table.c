@@ -21,10 +21,15 @@
 /* Called with table_lock held.  */
 static int qed_read_table(BDRVQEDState *s, uint64_t offset, QEDTable *table)
 {
-    QEMUIOVector qiov = QEMU_IOVEC_INIT_BUF(
-        qiov, table->offsets, s->header.cluster_size * s->header.table_size);
+    QEMUIOVector qiov;
     int noffsets;
     int i, ret;
+
+    struct iovec iov = {
+        .iov_base = table->offsets,
+        .iov_len = s->header.cluster_size * s->header.table_size,
+    };
+    qemu_iovec_init_external(&qiov, &iov, 1);
 
     trace_qed_read_table(s, offset, table);
 
@@ -66,6 +71,7 @@ static int qed_write_table(BDRVQEDState *s, uint64_t offset, QEDTable *table,
     unsigned int sector_mask = BDRV_SECTOR_SIZE / sizeof(uint64_t) - 1;
     unsigned int start, end, i;
     QEDTable *new_table;
+    struct iovec iov;
     QEMUIOVector qiov;
     size_t len_bytes;
     int ret;
@@ -79,7 +85,11 @@ static int qed_write_table(BDRVQEDState *s, uint64_t offset, QEDTable *table,
     len_bytes = (end - start) * sizeof(uint64_t);
 
     new_table = qemu_blockalign(s->bs, len_bytes);
-    qemu_iovec_init_buf(&qiov, new_table->offsets, len_bytes);
+    iov = (struct iovec) {
+        .iov_base = new_table->offsets,
+        .iov_len = len_bytes,
+    };
+    qemu_iovec_init_external(&qiov, &iov, 1);
 
     /* Byteswap table */
     for (i = start; i < end; i++) {

@@ -29,15 +29,15 @@
 #include "kvm_ppc.h"
 
 #define SPAPR_RNG(obj) \
-    OBJECT_CHECK(SpaprRngState, (obj), TYPE_SPAPR_RNG)
+    OBJECT_CHECK(sPAPRRngState, (obj), TYPE_SPAPR_RNG)
 
-struct SpaprRngState {
+struct sPAPRRngState {
     /*< private >*/
     DeviceState ds;
     RngBackend *backend;
     bool use_kvm;
 };
-typedef struct SpaprRngState SpaprRngState;
+typedef struct sPAPRRngState sPAPRRngState;
 
 struct HRandomData {
     QemuSemaphore sem;
@@ -64,10 +64,10 @@ static void random_recv(void *dest, const void *src, size_t size)
 }
 
 /* Handler for the H_RANDOM hypercall */
-static target_ulong h_random(PowerPCCPU *cpu, SpaprMachineState *spapr,
+static target_ulong h_random(PowerPCCPU *cpu, sPAPRMachineState *spapr,
                              target_ulong opcode, target_ulong *args)
 {
-    SpaprRngState *rngstate;
+    sPAPRRngState *rngstate;
     HRandomData hrdata;
 
     rngstate = SPAPR_RNG(object_resolve_path_type("", TYPE_SPAPR_RNG, NULL));
@@ -109,7 +109,7 @@ static void spapr_rng_instance_init(Object *obj)
 static void spapr_rng_realize(DeviceState *dev, Error **errp)
 {
 
-    SpaprRngState *rngstate = SPAPR_RNG(dev);
+    sPAPRRngState *rngstate = SPAPR_RNG(dev);
 
     if (rngstate->use_kvm) {
         if (kvmppc_enable_hwrng() == 0) {
@@ -132,9 +132,32 @@ static void spapr_rng_realize(DeviceState *dev, Error **errp)
     }
 }
 
+int spapr_rng_populate_dt(void *fdt)
+{
+    int node;
+    int ret;
+
+    node = qemu_fdt_add_subnode(fdt, "/ibm,platform-facilities");
+    if (node <= 0) {
+        return -1;
+    }
+    ret = fdt_setprop_string(fdt, node, "device_type",
+                             "ibm,platform-facilities");
+    ret |= fdt_setprop_cell(fdt, node, "#address-cells", 0x1);
+    ret |= fdt_setprop_cell(fdt, node, "#size-cells", 0x0);
+
+    node = fdt_add_subnode(fdt, node, "ibm,random-v1");
+    if (node <= 0) {
+        return -1;
+    }
+    ret |= fdt_setprop_string(fdt, node, "compatible", "ibm,random");
+
+    return ret ? -1 : 0;
+}
+
 static Property spapr_rng_properties[] = {
-    DEFINE_PROP_BOOL("use-kvm", SpaprRngState, use_kvm, false),
-    DEFINE_PROP_LINK("rng", SpaprRngState, backend, TYPE_RNG_BACKEND,
+    DEFINE_PROP_BOOL("use-kvm", sPAPRRngState, use_kvm, false),
+    DEFINE_PROP_LINK("rng", sPAPRRngState, backend, TYPE_RNG_BACKEND,
                      RngBackend *),
     DEFINE_PROP_END_OF_LIST(),
 };
@@ -152,7 +175,7 @@ static void spapr_rng_class_init(ObjectClass *oc, void *data)
 static const TypeInfo spapr_rng_info = {
     .name          = TYPE_SPAPR_RNG,
     .parent        = TYPE_DEVICE,
-    .instance_size = sizeof(SpaprRngState),
+    .instance_size = sizeof(sPAPRRngState),
     .instance_init = spapr_rng_instance_init,
     .class_init    = spapr_rng_class_init,
 };

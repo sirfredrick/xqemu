@@ -38,7 +38,9 @@
 #define IDAU_INTERFACE_GET_CLASS(obj) \
     OBJECT_GET_CLASS(IDAUInterfaceClass, (obj), TYPE_IDAU_INTERFACE)
 
-typedef struct IDAUInterface IDAUInterface;
+typedef struct IDAUInterface {
+    Object parent;
+} IDAUInterface;
 
 #define IREGION_NOTVALID -1
 

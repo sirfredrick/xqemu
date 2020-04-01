@@ -94,8 +94,7 @@ Testing:
     },
     "event": "SHUTDOWN",
     "data": {
-        "guest": false,
-        "reason": "host-qmp-quit"
+        "guest": false
     }
 }
 
@@ -174,8 +173,7 @@ Testing:
     },
     "event": "SHUTDOWN",
     "data": {
-        "guest": false,
-        "reason": "host-qmp-quit"
+        "guest": false
     }
 }
 
@@ -216,8 +214,7 @@ Testing:
     },
     "event": "SHUTDOWN",
     "data": {
-        "guest": false,
-        "reason": "host-qmp-quit"
+        "guest": false
     }
 }
 
@@ -252,8 +249,7 @@ Testing:
     },
     "event": "SHUTDOWN",
     "data": {
-        "guest": false,
-        "reason": "host-qmp-quit"
+        "guest": false
     }
 }
 

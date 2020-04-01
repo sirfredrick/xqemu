@@ -32,7 +32,6 @@
 
 #define AUDIO_CAP "dsound"
 #include "audio_int.h"
-#include "qemu/host-utils.h"
 
 #include <windows.h>
 #include <mmsystem.h>
@@ -44,10 +43,16 @@
 /* #define DEBUG_DSOUND */
 
 typedef struct {
+    int bufsize_in;
+    int bufsize_out;
+    int latency_millis;
+} DSoundConf;
+
+typedef struct {
     LPDIRECTSOUND dsound;
     LPDIRECTSOUNDCAPTURE dsound_capture;
     struct audsettings settings;
-    Audiodev *dev;
+    DSoundConf conf;
 } dsound;
 
 typedef struct {
@@ -243,9 +248,9 @@ static void GCC_FMT_ATTR (3, 4) dsound_logerr2 (
     dsound_log_hresult (hr);
 }
 
-static uint64_t usecs_to_bytes(struct audio_pcm_info *info, uint32_t usecs)
+static DWORD millis_to_bytes (struct audio_pcm_info *info, DWORD millis)
 {
-    return muldiv64(usecs, info->bytes_per_second, 1000000);
+    return (millis * info->bytes_per_second) / 1000;
 }
 
 #ifdef DEBUG_DSOUND
@@ -473,7 +478,7 @@ static int dsound_run_out (HWVoiceOut *hw, int live)
     LPVOID p1, p2;
     int bufsize;
     dsound *s = ds->s;
-    AudiodevDsoundOptions *dso = &s->dev->u.dsound;
+    DSoundConf *conf = &s->conf;
 
     if (!dsb) {
         dolog ("Attempt to run empty with playback buffer\n");
@@ -496,14 +501,14 @@ static int dsound_run_out (HWVoiceOut *hw, int live)
     len = live << hwshift;
 
     if (ds->first_time) {
-        if (dso->latency) {
+        if (conf->latency_millis) {
             DWORD cur_blat;
 
             cur_blat = audio_ring_dist (wpos, ppos, bufsize);
             ds->first_time = 0;
             old_pos = wpos;
             old_pos +=
-                usecs_to_bytes(&hw->info, dso->latency) - cur_blat;
+                millis_to_bytes (&hw->info, conf->latency_millis) - cur_blat;
             old_pos %= bufsize;
             old_pos &= ~hw->info.align;
         }
@@ -742,6 +747,12 @@ static int dsound_run_in (HWVoiceIn *hw)
     return decr;
 }
 
+static DSoundConf glob_conf = {
+    .bufsize_in         = 16384,
+    .bufsize_out        = 16384,
+    .latency_millis     = 10
+};
+
 static void dsound_audio_fini (void *opaque)
 {
     HRESULT hr;
@@ -772,22 +783,13 @@ static void dsound_audio_fini (void *opaque)
     g_free(s);
 }
 
-static void *dsound_audio_init(Audiodev *dev)
+static void *dsound_audio_init (void)
 {
     int err;
     HRESULT hr;
     dsound *s = g_malloc0(sizeof(dsound));
-    AudiodevDsoundOptions *dso;
 
-    assert(dev->driver == AUDIODEV_DRIVER_DSOUND);
-    s->dev = dev;
-    dso = &dev->u.dsound;
-
-    if (!dso->has_latency) {
-        dso->has_latency = true;
-        dso->latency = 10000; /* 10 ms */
-    }
-
+    s->conf = glob_conf;
     hr = CoInitialize (NULL);
     if (FAILED (hr)) {
         dsound_logerr (hr, "Could not initialize COM\n");
@@ -852,6 +854,28 @@ static void *dsound_audio_init(Audiodev *dev)
     return s;
 }
 
+static struct audio_option dsound_options[] = {
+    {
+        .name  = "LATENCY_MILLIS",
+        .tag   = AUD_OPT_INT,
+        .valp  = &glob_conf.latency_millis,
+        .descr = "(undocumented)"
+    },
+    {
+        .name  = "BUFSIZE_OUT",
+        .tag   = AUD_OPT_INT,
+        .valp  = &glob_conf.bufsize_out,
+        .descr = "(undocumented)"
+    },
+    {
+        .name  = "BUFSIZE_IN",
+        .tag   = AUD_OPT_INT,
+        .valp  = &glob_conf.bufsize_in,
+        .descr = "(undocumented)"
+    },
+    { /* End of list */ }
+};
+
 static struct audio_pcm_ops dsound_pcm_ops = {
     .init_out = dsound_init_out,
     .fini_out = dsound_fini_out,
@@ -869,6 +893,7 @@ static struct audio_pcm_ops dsound_pcm_ops = {
 static struct audio_driver dsound_audio_driver = {
     .name           = "dsound",
     .descr          = "DirectSound http://wikipedia.org/wiki/DirectSound",
+    .options        = dsound_options,
     .init           = dsound_audio_init,
     .fini           = dsound_audio_fini,
     .pcm_ops        = &dsound_pcm_ops,

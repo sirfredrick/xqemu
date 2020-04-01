@@ -13,6 +13,7 @@
 
 #include "qemu/osdep.h"
 #include "qapi/qmp/qbool.h"
+#include "qemu-common.h"
 
 /**
  * qbool_from_bool(): Create a new QBool from a bool

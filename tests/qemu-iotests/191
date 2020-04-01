@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Test commit block job where top has two parents
 #
@@ -24,7 +24,10 @@ owner=kwolf@redhat.com
 seq=`basename $0`
 echo "QA output created by $seq"
 
+here=`pwd`
 status=1 # failure is the default!
+
+MIG_SOCKET="${TEST_DIR}/migrate"
 
 _cleanup()
 {
@@ -80,7 +83,7 @@ _send_qemu_cmd $h \
                       'device': 'top',
                       'base':'$TEST_IMG.base',
                       'top': '$TEST_IMG.mid' } }" \
-    '"status": "null"'
+    "BLOCK_JOB_COMPLETED"
 _send_qemu_cmd $h "" "^}"
 
 echo
@@ -128,7 +131,7 @@ _send_qemu_cmd $h \
                       'device': 'top',
                       'base':'$TEST_IMG.base',
                       'top': '$TEST_IMG.mid' } }" \
-    '"status": "null"'
+    "BLOCK_JOB_COMPLETED"
 _send_qemu_cmd $h "" "^}"
 
 echo

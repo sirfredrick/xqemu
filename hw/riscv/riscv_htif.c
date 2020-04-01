@@ -29,6 +29,7 @@
 #include "chardev/char-fe.h"
 #include "hw/riscv/riscv_htif.h"
 #include "qemu/timer.h"
+#include "exec/address-spaces.h"
 #include "qemu/error-report.h"
 
 #define RISCV_DEBUG_HTIF 0
@@ -40,20 +41,17 @@
     } while (0)
 
 static uint64_t fromhost_addr, tohost_addr;
-static int address_symbol_set;
 
 void htif_symbol_callback(const char *st_name, int st_info, uint64_t st_value,
-                          uint64_t st_size)
+    uint64_t st_size)
 {
     if (strcmp("fromhost", st_name) == 0) {
-        address_symbol_set |= 1;
         fromhost_addr = st_value;
         if (st_size != 8) {
             error_report("HTIF fromhost must be 8 bytes");
             exit(1);
         }
     } else if (strcmp("tohost", st_name) == 0) {
-        address_symbol_set |= 2;
         tohost_addr = st_value;
         if (st_size != 8) {
             error_report("HTIF tohost must be 8 bytes");
@@ -250,11 +248,10 @@ HTIFState *htif_mm_init(MemoryRegion *address_space, MemoryRegion *main_mem,
     qemu_chr_fe_init(&s->chr, chr, &error_abort);
     qemu_chr_fe_set_handlers(&s->chr, htif_can_recv, htif_recv, htif_event,
         htif_be_change, s, NULL, true);
-    if (address_symbol_set == 3) {
+    if (base) {
         memory_region_init_io(&s->mmio, NULL, &htif_mm_ops, s,
-                              TYPE_HTIF_UART, size);
-        memory_region_add_subregion_overlap(address_space, base,
-                                            &s->mmio, 1);
+                            TYPE_HTIF_UART, size);
+        memory_region_add_subregion(address_space, base, &s->mmio);
     }
 
     return s;

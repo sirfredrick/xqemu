@@ -26,6 +26,8 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "exec/address-spaces.h"
+#include "exec/exec-all.h"
+#include "exec/ioport.h"
 
 #include "qemu-common.h"
 #include "hax-i386.h"
@@ -154,7 +156,13 @@ int hax_vcpu_create(int id)
         return 0;
     }
 
-    vcpu = g_new0(struct hax_vcpu_state, 1);
+    vcpu = g_malloc(sizeof(struct hax_vcpu_state));
+    if (!vcpu) {
+        fprintf(stderr, "Failed to alloc vcpu state\n");
+        return -ENOMEM;
+    }
+
+    memset(vcpu, 0, sizeof(struct hax_vcpu_state));
 
     ret = hax_host_create_vcpu(hax_global.vm->fd, id);
     if (ret) {
@@ -205,7 +213,7 @@ int hax_vcpu_destroy(CPUState *cpu)
     }
 
     /*
-     * 1. The hax_tunnel is also destroyed when vcpu is destroyed
+     * 1. The hax_tunnel is also destroied when vcpu destroy
      * 2. close fd will cause hax module vcpu be cleaned
      */
     hax_close_fd(vcpu->fd);
@@ -244,8 +252,11 @@ struct hax_vm *hax_vm_create(struct hax_state *hax)
         return hax->vm;
     }
 
-    vm = g_new0(struct hax_vm, 1);
-
+    vm = g_malloc(sizeof(struct hax_vm));
+    if (!vm) {
+        return NULL;
+    }
+    memset(vm, 0, sizeof(struct hax_vm));
     ret = hax_host_create_vm(hax, &vm_id);
     if (ret) {
         fprintf(stderr, "Failed to create vm %x\n", ret);

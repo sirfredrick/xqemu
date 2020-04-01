@@ -5,18 +5,18 @@
  * Copyright (c) 2015 Jannik Vogel
  * Copyright (c) 2018 Matt Borgerson
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 or
+ * (at your option) version 3 of the License.
  *
- * This library is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 uint64_t pramdac_read(void *opaque, hwaddr addr, unsigned int size)
@@ -40,30 +40,6 @@ uint64_t pramdac_read(void *opaque, hwaddr addr, unsigned int size)
              | NV_PRAMDAC_PLL_TEST_COUNTER_NVPLL_LOCK
              | NV_PRAMDAC_PLL_TEST_COUNTER_MPLL_LOCK
              | NV_PRAMDAC_PLL_TEST_COUNTER_VPLL_LOCK;
-        break;
-    case NV_PRAMDAC_GENERAL_CONTROL:
-        r = d->pramdac.general_control;
-        break;
-    case NV_PRAMDAC_FP_VDISPLAY_END:
-        r = d->pramdac.fp_vdisplay_end;
-        break;
-    case NV_PRAMDAC_FP_VCRTC:
-        r = d->pramdac.fp_vcrtc;
-        break;
-    case NV_PRAMDAC_FP_VSYNC_END:
-        r = d->pramdac.fp_vsync_end;
-        break;
-    case NV_PRAMDAC_FP_VVALID_END:
-        r = d->pramdac.fp_vvalid_end;
-        break;
-    case NV_PRAMDAC_FP_HDISPLAY_END:
-        r = d->pramdac.fp_hdisplay_end;
-        break;
-    case NV_PRAMDAC_FP_HCRTC:
-        r = d->pramdac.fp_hcrtc;
-        break;
-    case NV_PRAMDAC_FP_HVALID_END:
-        r = d->pramdac.fp_hvalid_end;
         break;
     default:
         break;
@@ -104,30 +80,6 @@ void pramdac_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
         break;
     case NV_PRAMDAC_VPLL_COEFF:
         d->pramdac.video_clock_coeff = val;
-        break;
-    case NV_PRAMDAC_GENERAL_CONTROL:
-        d->pramdac.general_control = val;
-        break;
-    case NV_PRAMDAC_FP_VDISPLAY_END:
-        d->pramdac.fp_vdisplay_end = val;
-        break;
-    case NV_PRAMDAC_FP_VCRTC:
-        d->pramdac.fp_vcrtc = val;
-        break;
-    case NV_PRAMDAC_FP_VSYNC_END:
-        d->pramdac.fp_vsync_end = val;
-        break;
-    case NV_PRAMDAC_FP_VVALID_END:
-        d->pramdac.fp_vvalid_end = val;
-        break;
-    case NV_PRAMDAC_FP_HDISPLAY_END:
-        d->pramdac.fp_hdisplay_end = val;
-        break;
-    case NV_PRAMDAC_FP_HCRTC:
-        d->pramdac.fp_hcrtc = val;
-        break;
-    case NV_PRAMDAC_FP_HVALID_END:
-        d->pramdac.fp_hvalid_end = val;
         break;
     default:
         break;

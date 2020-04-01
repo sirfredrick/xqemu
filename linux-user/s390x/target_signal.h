@@ -1,6 +1,8 @@
 #ifndef S390X_TARGET_SIGNAL_H
 #define S390X_TARGET_SIGNAL_H
 
+#include "cpu.h"
+
 typedef struct target_sigaltstack {
     abi_ulong ss_sp;
     int ss_flags;
@@ -16,7 +18,10 @@ typedef struct target_sigaltstack {
 #define TARGET_MINSIGSTKSZ     2048
 #define TARGET_SIGSTKSZ        8192
 
-#include "../generic/signal.h"
+static inline abi_ulong get_sp_from_cpustate(CPUS390XState *state)
+{
+   return state->regs[15];
+}
 
-#define TARGET_ARCH_HAS_SETUP_FRAME
+
 #endif /* S390X_TARGET_SIGNAL_H */

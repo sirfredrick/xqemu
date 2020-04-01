@@ -15,25 +15,20 @@ static void test_panic(void)
 {
     uint8_t val;
     QDict *response, *data;
-    QTestState *qts;
 
-    qts = qtest_init("-device pvpanic");
-
-    val = qtest_inb(qts, 0x505);
+    val = inb(0x505);
     g_assert_cmpuint(val, ==, 1);
 
-    qtest_outb(qts, 0x505, 0x1);
+    outb(0x505, 0x1);
 
-    response = qtest_qmp_receive(qts);
+    response = qmp_receive();
     g_assert(qdict_haskey(response, "event"));
     g_assert_cmpstr(qdict_get_str(response, "event"), ==, "GUEST_PANICKED");
     g_assert(qdict_haskey(response, "data"));
     data = qdict_get_qdict(response, "data");
     g_assert(qdict_haskey(data, "action"));
     g_assert_cmpstr(qdict_get_str(data, "action"), ==, "pause");
-    qobject_unref(response);
-
-    qtest_quit(qts);
+    QDECREF(response);
 }
 
 int main(int argc, char **argv)
@@ -43,7 +38,10 @@ int main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
     qtest_add_func("/pvpanic/panic", test_panic);
 
+    qtest_start("-device pvpanic");
     ret = g_test_run();
+
+    qtest_end();
 
     return ret;
 }

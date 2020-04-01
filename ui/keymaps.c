@@ -27,8 +27,6 @@
 #include "sysemu/sysemu.h"
 #include "trace.h"
 #include "qemu/error-report.h"
-#include "qapi/error.h"
-#include "ui/input.h"
 
 struct keysym2code {
     uint32_t count;
@@ -81,11 +79,10 @@ static void add_keysym(char *line, int keysym, int keycode, kbd_layout_t *k)
     trace_keymap_add(keysym, keycode, line);
 }
 
-static int parse_keyboard_layout(kbd_layout_t *k,
-                                 const name2keysym_t *table,
-                                 const char *language, Error **errp)
+static kbd_layout_t *parse_keyboard_layout(const name2keysym_t *table,
+                                           const char *language,
+                                           kbd_layout_t *k)
 {
-    int ret;
     FILE *f;
     char * filename;
     char line[1024];
@@ -97,8 +94,13 @@ static int parse_keyboard_layout(kbd_layout_t *k,
     f = filename ? fopen(filename, "r") : NULL;
     g_free(filename);
     if (!f) {
-        error_setg(errp, "could not read keymap file: '%s'", language);
-        return -1;
+        fprintf(stderr, "Could not read keymap file: '%s'\n", language);
+        return NULL;
+    }
+
+    if (!k) {
+        k = g_new0(kbd_layout_t, 1);
+        k->hash = g_hash_table_new(NULL, NULL);
     }
 
     for(;;) {
@@ -116,9 +118,7 @@ static int parse_keyboard_layout(kbd_layout_t *k,
             continue;
         }
         if (!strncmp(line, "include ", 8)) {
-            error_setg(errp, "keymap include files are not supported any more");
-            ret = -1;
-            goto out;
+            parse_keyboard_layout(table, line + 8, k);
         } else {
             int offset = 0;
             while (line[offset] != 0 &&
@@ -164,32 +164,20 @@ static int parse_keyboard_layout(kbd_layout_t *k,
             }
         }
     }
-
-    ret = 0;
-out:
     fclose(f);
-    return ret;
-}
-
-
-kbd_layout_t *init_keyboard_layout(const name2keysym_t *table,
-                                   const char *language, Error **errp)
-{
-    kbd_layout_t *k;
-
-    k = g_new0(kbd_layout_t, 1);
-    k->hash = g_hash_table_new(NULL, NULL);
-    if (parse_keyboard_layout(k, table, language, errp) < 0) {
-        g_hash_table_unref(k->hash);
-        g_free(k);
-        return NULL;
-    }
     return k;
 }
 
 
+kbd_layout_t *init_keyboard_layout(const name2keysym_t *table,
+                                   const char *language)
+{
+    return parse_keyboard_layout(table, language, NULL);
+}
+
+
 int keysym2scancode(kbd_layout_t *k, int keysym,
-                    QKbdState *kbd, bool down)
+                    bool shift, bool altgr, bool ctrl)
 {
     static const uint32_t mask =
         SCANCODE_SHIFT | SCANCODE_ALTGR | SCANCODE_CTRL;
@@ -213,39 +201,27 @@ int keysym2scancode(kbd_layout_t *k, int keysym,
         return keysym2code->keycodes[0];
     }
 
-    /* We have multiple keysym -> keycode mappings. */
-    if (down) {
-        /*
-         * On keydown: Check whenever we find one mapping where the
-         * modifier state of the mapping matches the current user
-         * interface modifier state.  If so, prefer that one.
-         */
-        mods = 0;
-        if (kbd && qkbd_state_modifier_get(kbd, QKBD_MOD_SHIFT)) {
-            mods |= SCANCODE_SHIFT;
-        }
-        if (kbd && qkbd_state_modifier_get(kbd, QKBD_MOD_ALTGR)) {
-            mods |= SCANCODE_ALTGR;
-        }
-        if (kbd && qkbd_state_modifier_get(kbd, QKBD_MOD_CTRL)) {
-            mods |= SCANCODE_CTRL;
-        }
+    /*
+     * We have multiple keysym -> keycode mappings.
+     *
+     * Check whenever we find one mapping where the modifier state of
+     * the mapping matches the current user interface modifier state.
+     * If so, prefer that one.
+     */
+    mods = 0;
+    if (shift) {
+        mods |= SCANCODE_SHIFT;
+    }
+    if (altgr) {
+        mods |= SCANCODE_ALTGR;
+    }
+    if (ctrl) {
+        mods |= SCANCODE_CTRL;
+    }
 
-        for (i = 0; i < keysym2code->count; i++) {
-            if ((keysym2code->keycodes[i] & mask) == mods) {
-                return keysym2code->keycodes[i];
-            }
-        }
-    } else {
-        /*
-         * On keyup: Try find a key which is actually down.
-         */
-        for (i = 0; i < keysym2code->count; i++) {
-            QKeyCode qcode = qemu_input_key_number_to_qcode
-                (keysym2code->keycodes[i]);
-            if (kbd && qkbd_state_key_get(kbd, qcode)) {
-                return keysym2code->keycodes[i];
-            }
+    for (i = 0; i < keysym2code->count; i++) {
+        if ((keysym2code->keycodes[i] & mask) == mods) {
+            return keysym2code->keycodes[i];
         }
     }
     return keysym2code->keycodes[0];

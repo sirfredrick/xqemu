@@ -1,5 +1,3 @@
-#include <unistd.h>
-
 static long test_subqv (long a, long b)
 {
   long res;

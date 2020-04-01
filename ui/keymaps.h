@@ -26,11 +26,10 @@
 #define QEMU_KEYMAPS_H
 
 #include "qemu-common.h"
-#include "ui/kbd-state.h"
 
 typedef struct {
-    const char* name;
-    int keysym;
+	const char* name;
+	int keysym;
 } name2keysym_t;
 
 /* scancode without modifiers */
@@ -54,9 +53,9 @@ typedef struct {
 typedef struct kbd_layout_t kbd_layout_t;
 
 kbd_layout_t *init_keyboard_layout(const name2keysym_t *table,
-                                   const char *language, Error **errp);
+                                   const char *language);
 int keysym2scancode(kbd_layout_t *k, int keysym,
-                    QKbdState *kbd, bool down);
+                    bool shift, bool altgr, bool ctrl);
 int keycode_is_keypad(kbd_layout_t *k, int keycode);
 int keysym_is_numlock(kbd_layout_t *k, int keysym);
 

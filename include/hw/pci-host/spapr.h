@@ -28,11 +28,11 @@
 #define TYPE_SPAPR_PCI_HOST_BRIDGE "spapr-pci-host-bridge"
 
 #define SPAPR_PCI_HOST_BRIDGE(obj) \
-    OBJECT_CHECK(SpaprPhbState, (obj), TYPE_SPAPR_PCI_HOST_BRIDGE)
+    OBJECT_CHECK(sPAPRPHBState, (obj), TYPE_SPAPR_PCI_HOST_BRIDGE)
 
 #define SPAPR_PCI_DMA_MAX_WINDOWS    2
 
-typedef struct SpaprPhbState SpaprPhbState;
+typedef struct sPAPRPHBState sPAPRPHBState;
 
 typedef struct spapr_pci_msi {
     uint32_t first_irq;
@@ -44,7 +44,7 @@ typedef struct spapr_pci_msi_mig {
     spapr_pci_msi value;
 } spapr_pci_msi_mig;
 
-struct SpaprPhbState {
+struct sPAPRPHBState {
     PCIHostState parent_obj;
 
     uint32_t index;
@@ -72,7 +72,7 @@ struct SpaprPhbState {
     int32_t msi_devs_num;
     spapr_pci_msi_mig *msi_devs;
 
-    QLIST_ENTRY(SpaprPhbState) list;
+    QLIST_ENTRY(sPAPRPHBState) list;
 
     bool ddw_enabled;
     uint64_t page_size_mask;
@@ -94,67 +94,67 @@ struct SpaprPhbState {
     ((1ULL << 32) - SPAPR_PCI_MEM_WIN_BUS_OFFSET)
 #define SPAPR_PCI_MEM64_WIN_SIZE     0x10000000000ULL /* 1 TiB */
 
-/* All PCI outbound windows will be within this range */
+/* Without manual configuration, all PCI outbound windows will be
+ * within this range */
 #define SPAPR_PCI_BASE               (1ULL << 45) /* 32 TiB */
 #define SPAPR_PCI_LIMIT              (1ULL << 46) /* 64 TiB */
 
-#define SPAPR_MAX_PHBS ((SPAPR_PCI_LIMIT - SPAPR_PCI_BASE) / \
-                        SPAPR_PCI_MEM64_WIN_SIZE - 1)
-
+#define SPAPR_PCI_2_7_MMIO_WIN_SIZE  0xf80000000
 #define SPAPR_PCI_IO_WIN_SIZE        0x10000
 
 #define SPAPR_PCI_MSI_WINDOW         0x40000000000ULL
 
-static inline qemu_irq spapr_phb_lsi_qirq(struct SpaprPhbState *phb, int pin)
+static inline qemu_irq spapr_phb_lsi_qirq(struct sPAPRPHBState *phb, int pin)
 {
-    SpaprMachineState *spapr = SPAPR_MACHINE(qdev_get_machine());
+    sPAPRMachineState *spapr = SPAPR_MACHINE(qdev_get_machine());
 
     return spapr_qirq(spapr, phb->lsi_table[pin].irq);
 }
 
-int spapr_populate_pci_dt(SpaprPhbState *phb, uint32_t intc_phandle, void *fdt,
-                          uint32_t nr_msis, int *node_offset);
+PCIHostState *spapr_create_phb(sPAPRMachineState *spapr, int index);
+
+int spapr_populate_pci_dt(sPAPRPHBState *phb,
+                          uint32_t xics_phandle,
+                          void *fdt);
 
 void spapr_pci_rtas_init(void);
 
-SpaprPhbState *spapr_pci_find_phb(SpaprMachineState *spapr, uint64_t buid);
-PCIDevice *spapr_pci_find_dev(SpaprMachineState *spapr, uint64_t buid,
+sPAPRPHBState *spapr_pci_find_phb(sPAPRMachineState *spapr, uint64_t buid);
+PCIDevice *spapr_pci_find_dev(sPAPRMachineState *spapr, uint64_t buid,
                               uint32_t config_addr);
 
-/* DRC callbacks */
+/* PCI release callback. */
 void spapr_phb_remove_pci_device_cb(DeviceState *dev);
-int spapr_pci_dt_populate(SpaprDrc *drc, SpaprMachineState *spapr,
-                          void *fdt, int *fdt_start_offset, Error **errp);
 
 /* VFIO EEH hooks */
 #ifdef CONFIG_LINUX
-bool spapr_phb_eeh_available(SpaprPhbState *sphb);
-int spapr_phb_vfio_eeh_set_option(SpaprPhbState *sphb,
+bool spapr_phb_eeh_available(sPAPRPHBState *sphb);
+int spapr_phb_vfio_eeh_set_option(sPAPRPHBState *sphb,
                                   unsigned int addr, int option);
-int spapr_phb_vfio_eeh_get_state(SpaprPhbState *sphb, int *state);
-int spapr_phb_vfio_eeh_reset(SpaprPhbState *sphb, int option);
-int spapr_phb_vfio_eeh_configure(SpaprPhbState *sphb);
+int spapr_phb_vfio_eeh_get_state(sPAPRPHBState *sphb, int *state);
+int spapr_phb_vfio_eeh_reset(sPAPRPHBState *sphb, int option);
+int spapr_phb_vfio_eeh_configure(sPAPRPHBState *sphb);
 void spapr_phb_vfio_reset(DeviceState *qdev);
 #else
-static inline bool spapr_phb_eeh_available(SpaprPhbState *sphb)
+static inline bool spapr_phb_eeh_available(sPAPRPHBState *sphb)
 {
     return false;
 }
-static inline int spapr_phb_vfio_eeh_set_option(SpaprPhbState *sphb,
+static inline int spapr_phb_vfio_eeh_set_option(sPAPRPHBState *sphb,
                                                 unsigned int addr, int option)
 {
     return RTAS_OUT_HW_ERROR;
 }
-static inline int spapr_phb_vfio_eeh_get_state(SpaprPhbState *sphb,
+static inline int spapr_phb_vfio_eeh_get_state(sPAPRPHBState *sphb,
                                                int *state)
 {
     return RTAS_OUT_HW_ERROR;
 }
-static inline int spapr_phb_vfio_eeh_reset(SpaprPhbState *sphb, int option)
+static inline int spapr_phb_vfio_eeh_reset(sPAPRPHBState *sphb, int option)
 {
     return RTAS_OUT_HW_ERROR;
 }
-static inline int spapr_phb_vfio_eeh_configure(SpaprPhbState *sphb)
+static inline int spapr_phb_vfio_eeh_configure(sPAPRPHBState *sphb)
 {
     return RTAS_OUT_HW_ERROR;
 }
@@ -163,11 +163,6 @@ static inline void spapr_phb_vfio_reset(DeviceState *qdev)
 }
 #endif
 
-void spapr_phb_dma_reset(SpaprPhbState *sphb);
-
-static inline unsigned spapr_phb_windows_supported(SpaprPhbState *sphb)
-{
-    return sphb->ddw_enabled ? SPAPR_PCI_DMA_MAX_WINDOWS : 1;
-}
+void spapr_phb_dma_reset(sPAPRPHBState *sphb);
 
 #endif /* PCI_HOST_SPAPR_H */

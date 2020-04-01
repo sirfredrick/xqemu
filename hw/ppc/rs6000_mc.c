@@ -18,7 +18,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/units.h"
 #include "hw/isa/isa.h"
 #include "exec/address-spaces.h"
 #include "hw/boards.h"
@@ -110,7 +109,7 @@ static void rs6000mc_port0820_write(void *opaque, uint32_t addr, uint32_t val)
             size = end_address - start_address;
             memory_region_set_enabled(&s->simm[socket - 1], size != 0);
             memory_region_set_address(&s->simm[socket - 1],
-                                      start_address * 8 * MiB);
+                                      start_address * 8 * 1024 * 1024);
         }
     }
 }
@@ -141,7 +140,7 @@ static void rs6000mc_realize(DeviceState *dev, Error **errp)
 {
     RS6000MCState *s = RS6000MC_DEVICE(dev);
     int socket = 0;
-    unsigned int ram_size = s->ram_size / MiB;
+    unsigned int ram_size = s->ram_size / (1024 * 1024);
 
     while (socket < 6) {
         if (ram_size >= 64) {
@@ -164,8 +163,8 @@ static void rs6000mc_realize(DeviceState *dev, Error **errp)
             char name[] = "simm.?";
             name[5] = socket + '0';
             memory_region_allocate_system_memory(&s->simm[socket], OBJECT(dev),
-                                                 name,
-                                                 s->simm_size[socket] * MiB);
+                                                 name, s->simm_size[socket]
+                                                 * 1024 * 1024);
             memory_region_add_subregion_overlap(get_system_memory(), 0,
                                                 &s->simm[socket], socket);
         }
@@ -173,8 +172,8 @@ static void rs6000mc_realize(DeviceState *dev, Error **errp)
     if (ram_size) {
         /* unable to push all requested RAM in SIMMs */
         error_setg(errp, "RAM size incompatible with this board. "
-                   "Try again with something else, like %" PRId64 " MB",
-                   s->ram_size / MiB - ram_size);
+                   "Try again with something else, like %d MB",
+                   s->ram_size / 1024 / 1024 - ram_size);
         return;
     }
 

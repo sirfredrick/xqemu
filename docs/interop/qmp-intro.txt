@@ -52,14 +52,13 @@ Escape character is '^]'.
     "QMP": {
         "version": {
             "qemu": {
-                "micro": 0,
-                "minor": 0,
-                "major": 3
-            },
-            "package": "v3.0.0"
-        },
+                "micro": 50, 
+                "minor": 6, 
+                "major": 1
+            }, 
+            "package": ""
+        }, 
         "capabilities": [
-            "oob"
         ]
     }
 }

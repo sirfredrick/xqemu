@@ -300,9 +300,8 @@ static const VMStateDescription vmstate_ppc4xx_pci = {
 };
 
 /* XXX Interrupt acknowledge cycles not supported. */
-static void ppc4xx_pcihost_realize(DeviceState *dev, Error **errp)
+static int ppc4xx_pcihost_initfn(SysBusDevice *dev)
 {
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
     PPC4xxPCIState *s;
     PCIHostState *h;
     PCIBus *b;
@@ -312,10 +311,10 @@ static void ppc4xx_pcihost_realize(DeviceState *dev, Error **errp)
     s = PPC4xx_PCI_HOST_BRIDGE(dev);
 
     for (i = 0; i < ARRAY_SIZE(s->irq); i++) {
-        sysbus_init_irq(sbd, &s->irq[i]);
+        sysbus_init_irq(dev, &s->irq[i]);
     }
 
-    b = pci_register_root_bus(dev, NULL, ppc4xx_pci_set_irq,
+    b = pci_register_root_bus(DEVICE(dev), NULL, ppc4xx_pci_set_irq,
                               ppc4xx_pci_map_irq, s->irq, get_system_memory(),
                               get_system_io(), 0, 4, TYPE_PCI_BUS);
     h->bus = b;
@@ -333,8 +332,10 @@ static void ppc4xx_pcihost_realize(DeviceState *dev, Error **errp)
     memory_region_add_subregion(&s->container, PCIC0_CFGADDR, &h->conf_mem);
     memory_region_add_subregion(&s->container, PCIC0_CFGDATA, &h->data_mem);
     memory_region_add_subregion(&s->container, PCI_REG_BASE, &s->iomem);
-    sysbus_init_mmio(sbd, &s->container);
+    sysbus_init_mmio(dev, &s->container);
     qemu_register_reset(ppc4xx_pci_reset, s);
+
+    return 0;
 }
 
 static void ppc4xx_host_bridge_class_init(ObjectClass *klass, void *data)
@@ -366,9 +367,10 @@ static const TypeInfo ppc4xx_host_bridge_info = {
 
 static void ppc4xx_pcihost_class_init(ObjectClass *klass, void *data)
 {
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->realize = ppc4xx_pcihost_realize;
+    k->init = ppc4xx_pcihost_initfn;
     dc->vmsd = &vmstate_ppc4xx_pci;
 }
 

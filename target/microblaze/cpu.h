@@ -23,7 +23,7 @@
 #include "qemu-common.h"
 #include "cpu-qom.h"
 
-#define TARGET_LONG_BITS 64
+#define TARGET_LONG_BITS 32
 
 #define CPUArchState struct CPUMBState
 
@@ -203,7 +203,6 @@ typedef struct CPUMBState CPUMBState;
 
 /* Target family PVR mask */
 #define PVR10_TARGET_FAMILY_MASK        0xFF000000
-#define PVR10_ASIZE_SHIFT               18
 
 /* MMU descrtiption */
 #define PVR11_USE_MMU                   0xC0000000
@@ -239,19 +238,19 @@ typedef struct CPUMBState CPUMBState;
 struct CPUMBState {
     uint32_t debug;
     uint32_t btaken;
-    uint64_t btarget;
+    uint32_t btarget;
     uint32_t bimm;
 
     uint32_t imm;
-    uint32_t regs[32];
-    uint64_t sregs[14];
+    uint32_t regs[33];
+    uint32_t sregs[24];
     float_status fp_status;
     /* Stack protectors. Yes, it's a hw feature.  */
     uint32_t slr, shr;
 
     /* lwx/swx reserved address */
 #define RES_ADDR_NONE 0xffffffff /* Use 0xffffffff to indicate no reservation */
-    target_ulong res_addr;
+    uint32_t res_addr;
     uint32_t res_val;
 
     /* Internal flags.  */
@@ -278,7 +277,7 @@ struct CPUMBState {
     /* These fields are preserved on reset.  */
 
     struct {
-        uint32_t regs[13];
+        uint32_t regs[16];
     } pvr;
 };
 
@@ -298,7 +297,6 @@ struct MicroBlazeCPU {
     struct {
         bool stackprot;
         uint32_t base_vectors;
-        uint8_t addr_size;
         uint8_t use_fpu;
         uint8_t use_hw_mul;
         bool use_barrel;
@@ -308,8 +306,6 @@ struct MicroBlazeCPU {
         bool use_mmu;
         bool dcache_writeback;
         bool endi;
-        bool dopb_bus_exception;
-        bool iopb_bus_exception;
         char *version;
         uint8_t pvr;
     } cfg;
@@ -344,8 +340,8 @@ int cpu_mb_signal_handler(int host_signum, void *pinfo,
 /* FIXME: MB uses variable pages down to 1K but linux only uses 4k.  */
 #define TARGET_PAGE_BITS 12
 
-#define TARGET_PHYS_ADDR_SPACE_BITS 64
-#define TARGET_VIRT_ADDR_SPACE_BITS 64
+#define TARGET_PHYS_ADDR_SPACE_BITS 32
+#define TARGET_VIRT_ADDR_SPACE_BITS 32
 
 #define CPU_RESOLVING_TYPE TYPE_MICROBLAZE_CPU
 
@@ -362,17 +358,13 @@ int cpu_mb_signal_handler(int host_signum, void *pinfo,
 
 static inline int cpu_mmu_index (CPUMBState *env, bool ifetch)
 {
-    MicroBlazeCPU *cpu = mb_env_get_cpu(env);
+        /* Are we in nommu mode?.  */
+        if (!(env->sregs[SR_MSR] & MSR_VM))
+            return MMU_NOMMU_IDX;
 
-    /* Are we in nommu mode?.  */
-    if (!(env->sregs[SR_MSR] & MSR_VM) || !cpu->cfg.use_mmu) {
-        return MMU_NOMMU_IDX;
-    }
-
-    if (env->sregs[SR_MSR] & MSR_UM) {
-        return MMU_USER_IDX;
-    }
-    return MMU_KERNEL_IDX;
+	if (env->sregs[SR_MSR] & MSR_UM)
+            return MMU_USER_IDX;
+        return MMU_KERNEL_IDX;
 }
 
 int mb_cpu_handle_mmu_fault(CPUState *cpu, vaddr address, int size, int rw,
@@ -390,10 +382,9 @@ static inline void cpu_get_tb_cpu_state(CPUMBState *env, target_ulong *pc,
 }
 
 #if !defined(CONFIG_USER_ONLY)
-void mb_cpu_transaction_failed(CPUState *cs, hwaddr physaddr, vaddr addr,
-                               unsigned size, MMUAccessType access_type,
-                               int mmu_idx, MemTxAttrs attrs,
-                               MemTxResult response, uintptr_t retaddr);
+void mb_cpu_unassigned_access(CPUState *cpu, hwaddr addr,
+                              bool is_write, bool is_exec, int is_asi,
+                              unsigned size);
 #endif
 
 #endif

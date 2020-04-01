@@ -19,12 +19,10 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/log.h"
 #include "hw/hw.h"
 #include "qemu/timer.h"
 #include "ui/console.h"
 #include "hw/devices.h"
-#include "trace.h"
 
 #define TSC_CUT_RESOLUTION(value, p)	((value) >> (16 - (p ? 12 : 10)))
 
@@ -202,17 +200,17 @@ static void tsc2005_write(TSC2005State *s, int reg, uint16_t data)
         s->host_mode = (data >> 15) != 0;
         if (s->enabled != !(data & 0x4000)) {
             s->enabled = !(data & 0x4000);
-            trace_tsc2005_sense(s->enabled ? "enabled" : "disabled");
+            fprintf(stderr, "%s: touchscreen sense %sabled\n",
+                            __func__, s->enabled ? "en" : "dis");
             if (s->busy && !s->enabled)
                 timer_del(s->timer);
             s->busy = s->busy && s->enabled;
         }
         s->nextprecision = (data >> 13) & 1;
         s->timing[0] = data & 0x1fff;
-        if ((s->timing[0] >> 11) == 3) {
-            qemu_log_mask(LOG_GUEST_ERROR,
-                          "tsc2005_write: illegal conversion clock setting\n");
-        }
+        if ((s->timing[0] >> 11) == 3)
+            fprintf(stderr, "%s: illegal conversion clock setting\n",
+                            __func__);
         break;
     case 0xd:	/* CFR1 */
         s->timing[1] = data & 0xf07;
@@ -223,9 +221,8 @@ static void tsc2005_write(TSC2005State *s, int reg, uint16_t data)
         break;
 
     default:
-        qemu_log_mask(LOG_GUEST_ERROR,
-                      "%s: write into read-only register 0x%x\n",
-                      __func__, reg);
+        fprintf(stderr, "%s: write into read-only register %x\n",
+                        __func__, reg);
     }
 }
 
@@ -340,7 +337,8 @@ static uint8_t tsc2005_txrx_word(void *opaque, uint8_t value)
                 s->nextprecision = (value >> 2) & 1;
                 if (s->enabled != !(value & 1)) {
                     s->enabled = !(value & 1);
-                    trace_tsc2005_sense(s->enabled ? "enabled" : "disabled");
+                    fprintf(stderr, "%s: touchscreen sense %sabled\n",
+                                    __func__, s->enabled ? "en" : "dis");
                     if (s->busy && !s->enabled)
                         timer_del(s->timer);
                     s->busy = s->busy && s->enabled;

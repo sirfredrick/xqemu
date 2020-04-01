@@ -11,10 +11,10 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/units.h"
 #include "qapi/error.h"
 #include "cpu.h"
 #include "hw/hw.h"
+#include "hw/devices.h"
 #include "sysemu/sysemu.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_bus.h"
@@ -76,7 +76,7 @@
 /* #define xxx    0x200 - bit 9 not used */
 #define RS232INT  0x400
 
-#define DINO_MEM_CHUNK_SIZE (8 * MiB)
+#define DINO_MEM_CHUNK_SIZE (8 * 1024 * 1024) /* 8MB */
 
 #define DINO_PCI_HOST_BRIDGE(obj) \
     OBJECT_CHECK(DinoState, (obj), TYPE_DINO_PCI_HOST_BRIDGE)
@@ -104,7 +104,6 @@ typedef struct DinoState {
     MemoryRegion bm;
     MemoryRegion bm_ram_alias;
     MemoryRegion bm_pci_alias;
-    MemoryRegion bm_cpu_alias;
 
     MemoryRegion cpu0_eir_mem;
 } DinoState;
@@ -138,8 +137,7 @@ static void gsc_to_pci_forwarding(DinoState *s)
 }
 
 static bool dino_chip_mem_valid(void *opaque, hwaddr addr,
-                                unsigned size, bool is_write,
-                                MemTxAttrs attrs)
+                                unsigned size, bool is_write)
 {
     switch (addr) {
     case DINO_IAR0:
@@ -177,7 +175,7 @@ static MemTxResult dino_chip_read_with_attrs(void *opaque, hwaddr addr,
     case DINO_PCI_IO_DATA ... DINO_PCI_IO_DATA + 3:
         /* Read from PCI IO space. */
         io = &address_space_io;
-        ioaddr = s->parent_obj.config_reg + (addr & 3);
+        ioaddr = s->parent_obj.config_reg;
         switch (size) {
         case 1:
             val = address_space_ldub(io, ioaddr, attrs, &ret);
@@ -249,7 +247,7 @@ static MemTxResult dino_chip_write_with_attrs(void *opaque, hwaddr addr,
     case DINO_IO_DATA ... DINO_PCI_IO_DATA + 3:
         /* Write into PCI IO space.  */
         io = &address_space_io;
-        ioaddr = s->parent_obj.config_reg + (addr & 3);
+        ioaddr = s->parent_obj.config_reg;
         switch (size) {
         case 1:
             address_space_stb(io, ioaddr, val, attrs, &ret);
@@ -359,27 +357,6 @@ static const MemoryRegionOps dino_config_data_ops = {
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
-static uint64_t dino_config_addr_read(void *opaque, hwaddr addr, unsigned len)
-{
-    PCIHostState *s = opaque;
-    return s->config_reg;
-}
-
-static void dino_config_addr_write(void *opaque, hwaddr addr,
-                                   uint64_t val, unsigned len)
-{
-    PCIHostState *s = opaque;
-    s->config_reg = val & ~3U;
-}
-
-static const MemoryRegionOps dino_config_addr_ops = {
-    .read = dino_config_addr_read,
-    .write = dino_config_addr_write,
-    .valid.min_access_size = 4,
-    .valid.max_access_size = 4,
-    .endianness = DEVICE_BIG_ENDIAN,
-};
-
 static AddressSpace *dino_pcihost_set_iommu(PCIBus *bus, void *opaque,
                                             int devfn)
 {
@@ -426,10 +403,13 @@ static void dino_set_irq(void *opaque, int irq, int level)
 static int dino_pci_map_irq(PCIDevice *d, int irq_num)
 {
     int slot = d->devfn >> 3;
+    int local_irq;
 
     assert(irq_num >= 0 && irq_num <= 3);
 
-    return slot & 0x03;
+    local_irq = slot & 0x03;
+
+    return local_irq;
 }
 
 static void dino_set_timer_irq(void *opaque, int irq, int level)
@@ -460,7 +440,7 @@ PCIBus *dino_init(MemoryRegion *addr_space,
 
     /* Dino PCI config. */
     memory_region_init_io(&s->parent_obj.conf_mem, OBJECT(&s->parent_obj),
-                          &dino_config_addr_ops, dev, "pci-conf-idx", 4);
+                          &pci_host_conf_be_ops, dev, "pci-conf-idx", 4);
     memory_region_init_io(&s->parent_obj.data_mem, OBJECT(&s->parent_obj),
                           &dino_config_data_ops, dev, "pci-conf-data", 4);
     memory_region_add_subregion(&s->this_mem, DINO_PCI_CONFIG_ADDR,
@@ -494,17 +474,12 @@ PCIBus *dino_init(MemoryRegion *addr_space,
     memory_region_init_alias(&s->bm_pci_alias, OBJECT(s),
                              "bm-pci", &s->pci_mem,
                              0xf0000000 + DINO_MEM_CHUNK_SIZE,
-                             30 * DINO_MEM_CHUNK_SIZE);
-    memory_region_init_alias(&s->bm_cpu_alias, OBJECT(s),
-                             "bm-cpu", addr_space, 0xfff00000,
-                             0xfffff);
+                             31 * DINO_MEM_CHUNK_SIZE);
     memory_region_add_subregion(&s->bm, 0,
                                 &s->bm_ram_alias);
     memory_region_add_subregion(&s->bm,
                                 0xf0000000 + DINO_MEM_CHUNK_SIZE,
                                 &s->bm_pci_alias);
-    memory_region_add_subregion(&s->bm, 0xfff00000,
-                                &s->bm_cpu_alias);
     address_space_init(&s->bm_as, &s->bm, "pci-bm");
     pci_setup_iommu(b, dino_pcihost_set_iommu, s);
 
@@ -514,10 +489,17 @@ PCIBus *dino_init(MemoryRegion *addr_space,
     return b;
 }
 
+static int dino_pcihost_init(SysBusDevice *dev)
+{
+    return 0;
+}
+
 static void dino_pcihost_class_init(ObjectClass *klass, void *data)
 {
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    k->init = dino_pcihost_init;
     dc->vmsd = &vmstate_dino;
 }
 

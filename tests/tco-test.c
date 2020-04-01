@@ -58,13 +58,13 @@ static void test_init(TestData *d)
 {
     QTestState *qs;
 
-    qs = qtest_initf("-machine q35 %s %s",
-                     d->noreboot ? "" : "-global ICH9-LPC.noreboot=false",
-                     !d->args ? "" : d->args);
+    qs = qtest_startf("-machine q35 %s %s",
+                      d->noreboot ? "" : "-global ICH9-LPC.noreboot=false",
+                      !d->args ? "" : d->args);
     global_qtest = qs;
     qtest_irq_intercept_in(qs, "ioapic");
 
-    d->bus = qpci_new_pc(qs, NULL);
+    d->bus = qpci_init_pc(qs, NULL);
     d->dev = qpci_device_find(d->bus, QPCI_DEVFN(0x1f, 0x00));
     g_assert(d->dev != NULL);
 
@@ -241,8 +241,8 @@ static QDict *get_watchdog_action(void)
     QDict *data;
 
     data = qdict_get_qdict(ev, "data");
-    qobject_ref(data);
-    qobject_unref(ev);
+    QINCREF(data);
+    QDECREF(ev);
     return data;
 }
 
@@ -265,7 +265,7 @@ static void test_tco_second_timeout_pause(void)
     clock_step(ticks * TCO_TICK_NSEC * 2);
     ad = get_watchdog_action();
     g_assert(!strcmp(qdict_get_str(ad, "action"), "pause"));
-    qobject_unref(ad);
+    QDECREF(ad);
 
     stop_tco(&td);
     test_end(&td);
@@ -290,7 +290,7 @@ static void test_tco_second_timeout_reset(void)
     clock_step(ticks * TCO_TICK_NSEC * 2);
     ad = get_watchdog_action();
     g_assert(!strcmp(qdict_get_str(ad, "action"), "reset"));
-    qobject_unref(ad);
+    QDECREF(ad);
 
     stop_tco(&td);
     test_end(&td);
@@ -315,7 +315,7 @@ static void test_tco_second_timeout_shutdown(void)
     clock_step(ticks * TCO_TICK_NSEC * 2);
     ad = get_watchdog_action();
     g_assert(!strcmp(qdict_get_str(ad, "action"), "shutdown"));
-    qobject_unref(ad);
+    QDECREF(ad);
 
     stop_tco(&td);
     test_end(&td);
@@ -340,7 +340,7 @@ static void test_tco_second_timeout_none(void)
     clock_step(ticks * TCO_TICK_NSEC * 2);
     ad = get_watchdog_action();
     g_assert(!strcmp(qdict_get_str(ad, "action"), "none"));
-    qobject_unref(ad);
+    QDECREF(ad);
 
     stop_tco(&td);
     test_end(&td);

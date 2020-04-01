@@ -497,16 +497,17 @@ static void milkymist_pfpu_reset(DeviceState *d)
     }
 }
 
-static void milkymist_pfpu_realize(DeviceState *dev, Error **errp)
+static int milkymist_pfpu_init(SysBusDevice *dev)
 {
     MilkymistPFPUState *s = MILKYMIST_PFPU(dev);
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
 
-    sysbus_init_irq(sbd, &s->irq);
+    sysbus_init_irq(dev, &s->irq);
 
     memory_region_init_io(&s->regs_region, OBJECT(dev), &pfpu_mmio_ops, s,
             "milkymist-pfpu", MICROCODE_END * 4);
-    sysbus_init_mmio(sbd, &s->regs_region);
+    sysbus_init_mmio(dev, &s->regs_region);
+
+    return 0;
 }
 
 static const VMStateDescription vmstate_milkymist_pfpu = {
@@ -526,8 +527,9 @@ static const VMStateDescription vmstate_milkymist_pfpu = {
 static void milkymist_pfpu_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
 
-    dc->realize = milkymist_pfpu_realize;
+    k->init = milkymist_pfpu_init;
     dc->reset = milkymist_pfpu_reset;
     dc->vmsd = &vmstate_milkymist_pfpu;
 }

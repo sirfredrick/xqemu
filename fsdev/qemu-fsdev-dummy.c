@@ -15,7 +15,7 @@
 #include "qemu/config-file.h"
 #include "qemu/module.h"
 
-int qemu_fsdev_add(QemuOpts *opts, Error **errp)
+int qemu_fsdev_add(QemuOpts *opts)
 {
     return 0;
 }

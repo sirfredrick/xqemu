@@ -135,7 +135,7 @@ static inline int thunk_type_size(const argtype *type_ptr, int is_host)
         se = struct_entries + type_ptr[1];
         return se->size[is_host];
     default:
-        g_assert_not_reached();
+        return -1;
     }
 }
 
@@ -149,32 +149,20 @@ static inline int thunk_type_align(const argtype *type_ptr, int is_host)
     case TYPE_CHAR:
         return 1;
     case TYPE_SHORT:
-        if (is_host) {
-            return __alignof__(short);
-        } else {
-            return ABI_SHORT_ALIGNMENT;
-        }
+        return 2;
     case TYPE_INT:
-        if (is_host) {
-            return __alignof__(int);
-        } else {
-            return ABI_INT_ALIGNMENT;
-        }
+        return 4;
     case TYPE_LONGLONG:
     case TYPE_ULONGLONG:
-        if (is_host) {
-            return __alignof__(long long);
-        } else {
-            return ABI_LLONG_ALIGNMENT;
-        }
+        return 8;
     case TYPE_LONG:
     case TYPE_ULONG:
     case TYPE_PTRVOID:
     case TYPE_PTR:
         if (is_host) {
-            return __alignof__(long);
+            return sizeof(void *);
         } else {
-            return ABI_LONG_ALIGNMENT;
+            return TARGET_ABI_BITS / 8;
         }
         break;
     case TYPE_OLDDEVT:
@@ -185,7 +173,7 @@ static inline int thunk_type_align(const argtype *type_ptr, int is_host)
         se = struct_entries + type_ptr[1];
         return se->align[is_host];
     default:
-        g_assert_not_reached();
+        return -1;
     }
 }
 

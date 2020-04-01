@@ -46,8 +46,7 @@
     VMSTATE_UINTTR_ARRAY_V(_f, _s, _n, 0)
 
 
-static int get_psw(QEMUFile *f, void *opaque, size_t size,
-                   const VMStateField *field)
+static int get_psw(QEMUFile *f, void *opaque, size_t size, VMStateField *field)
 {
     CPUHPPAState *env = opaque;
     cpu_hppa_put_psw(env, qemu_get_betr(f));
@@ -55,7 +54,7 @@ static int get_psw(QEMUFile *f, void *opaque, size_t size,
 }
 
 static int put_psw(QEMUFile *f, void *opaque, size_t size,
-                   const VMStateField *field, QJSON *vmdesc)
+                   VMStateField *field, QJSON *vmdesc)
 {
     CPUHPPAState *env = opaque;
     qemu_put_betr(f, cpu_hppa_get_psw(env));
@@ -69,8 +68,7 @@ static const VMStateInfo vmstate_psw = {
 };
 
 /* FIXME: Use the PA2.0 format, which is a superset of the PA1.1 format.  */
-static int get_tlb(QEMUFile *f, void *opaque, size_t size,
-                   const VMStateField *field)
+static int get_tlb(QEMUFile *f, void *opaque, size_t size, VMStateField *field)
 {
     hppa_tlb_entry *ent = opaque;
     uint32_t val;
@@ -96,7 +94,7 @@ static int get_tlb(QEMUFile *f, void *opaque, size_t size,
 }
 
 static int put_tlb(QEMUFile *f, void *opaque, size_t size,
-                   const VMStateField *field, QJSON *vmdesc)
+                   VMStateField *field, QJSON *vmdesc)
 {
     hppa_tlb_entry *ent = opaque;
     uint32_t val = 0;

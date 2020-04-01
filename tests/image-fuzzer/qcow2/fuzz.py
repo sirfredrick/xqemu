@@ -17,7 +17,6 @@
 #
 
 import random
-from functools import reduce
 
 UINT8 = 0xff
 UINT16 = 0xffff

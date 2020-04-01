@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Test for commit of larger active layer
 #
@@ -27,6 +27,7 @@ owner=jcody@redhat.com
 seq=`basename $0`
 echo "QA output created by $seq"
 
+here=`pwd`
 status=1	# failure is the default!
 
 _cleanup()
@@ -71,7 +72,7 @@ _send_qemu_cmd $h "{ 'execute': 'qmp_capabilities' }" "return"
 
 _send_qemu_cmd $h "{ 'execute': 'block-commit',
                                  'arguments': { 'device': 'test',
-                                 'top': '"${TEST_IMG}.snp1"' } }" '"status": "null"'
+                                 'top': '"${TEST_IMG}.snp1"' } }" "BLOCK_JOB_COMPLETED"
 
 _cleanup_qemu
 

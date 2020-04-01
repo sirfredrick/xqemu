@@ -23,14 +23,9 @@ void tpm_emu_test_wait_cond(TestState *s)
     gint64 end_time = g_get_monotonic_time() + 5 * G_TIME_SPAN_SECOND;
 
     g_mutex_lock(&s->data_mutex);
-
-    if (!s->data_cond_signal &&
-        !g_cond_wait_until(&s->data_cond, &s->data_mutex, end_time)) {
+    if (!g_cond_wait_until(&s->data_cond, &s->data_mutex, end_time)) {
         g_assert_not_reached();
     }
-
-    s->data_cond_signal = false;
-
     g_mutex_unlock(&s->data_mutex);
 }
 
@@ -77,10 +72,6 @@ void *tpm_emu_ctrl_thread(void *data)
     QIOChannel *ioc;
 
     qio_channel_socket_listen_sync(lioc, s->addr, &error_abort);
-
-    g_mutex_lock(&s->data_mutex);
-    s->data_cond_signal = true;
-    g_mutex_unlock(&s->data_mutex);
     g_cond_signal(&s->data_cond);
 
     qio_channel_wait(QIO_CHANNEL(lioc), G_IO_IN);
@@ -134,7 +125,7 @@ void *tpm_emu_ctrl_thread(void *data)
         case CMD_SHUTDOWN: {
             ptm_res res = 0;
             qio_channel_write(ioc, (char *)&res, sizeof(res), &error_abort);
-            /* the tpm data thread is expected to finish now */
+            qio_channel_close(s->tpm_ioc, &error_abort);
             g_thread_join(s->emu_tpm_thread);
             break;
         }

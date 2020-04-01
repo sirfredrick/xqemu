@@ -1,20 +1,17 @@
 FROM centos:7
-RUN yum install -y epel-release centos-release-xen-48
-
+RUN yum install -y epel-release centos-release-xen
 RUN yum -y update
 ENV PACKAGES \
     bison \
-    bzip2 \
     bzip2-devel \
     ccache \
     csnappy-devel \
     flex \
-    gcc-c++ \
+    g++ \
     gcc \
     gettext \
     git \
     glib2-devel \
-    libaio-devel \
     libepoxy-devel \
     libfdt-devel \
     librdmacm-devel \
@@ -22,8 +19,6 @@ ENV PACKAGES \
     make \
     mesa-libEGL-devel \
     mesa-libgbm-devel \
-    nettle-devel \
-    perl-Test-Harness \
     pixman-devel \
     SDL-devel \
     spice-glib-devel \

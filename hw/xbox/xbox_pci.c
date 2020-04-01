@@ -4,18 +4,18 @@
  * Copyright (c) 2012 espes
  * Copyright (c) 2018 Matt Borgerson
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 or
+ * (at your option) version 3 of the License.
  *
- * This library is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "qemu/osdep.h"
@@ -451,29 +451,31 @@ static const TypeInfo xbox_pci_info = {
 #define CONFIG_ADDR 0xcf8
 #define CONFIG_DATA 0xcfc
 
-static void xbox_pcihost_realize(DeviceState *dev, Error **errp)
+static int xbox_pcihost_initfn(SysBusDevice *dev)
 {
     PCIHostState *s = PCI_HOST_BRIDGE(dev);
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
 
     memory_region_init_io(&s->conf_mem, OBJECT(dev),
                           &pci_host_conf_le_ops, s,
                           "pci-conf-idx", 4);
-    sysbus_add_io(sbd, CONFIG_ADDR, &s->conf_mem);
+    sysbus_add_io(dev, CONFIG_ADDR, &s->conf_mem);
     sysbus_init_ioports(&s->busdev, CONFIG_ADDR, 4);
 
     memory_region_init_io(&s->data_mem, OBJECT(dev),
                           &pci_host_data_le_ops, s,
                           "pci-conf-data", 4);
-    sysbus_add_io(sbd, CONFIG_DATA, &s->data_mem);
+    sysbus_add_io(dev, CONFIG_DATA, &s->data_mem);
     sysbus_init_ioports(&s->busdev, CONFIG_DATA, 4);
+
+    return 0;
 }
 
 static void xbox_pcihost_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
 
-    dc->realize = xbox_pcihost_realize;
+    k->init = xbox_pcihost_initfn;
     dc->user_creatable = false;
 }
 

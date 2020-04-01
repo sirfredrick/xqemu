@@ -10,5 +10,4 @@
 #define xA4 14
 #define xA5 15
 #define xA6 16
-#define xA7 17  /* syscall number for RVI ABI */
-#define xT0 5   /* syscall number for RVE ABI */
+#define xA7 17  /* syscall number goes here */

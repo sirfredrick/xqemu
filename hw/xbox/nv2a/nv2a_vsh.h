@@ -3,18 +3,20 @@
  *
  * Copyright (c) 2012 espes
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation; either version 2 or
- * (at your option) version 3 of the License.
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License version 2 as published by the Free Software Foundation.
  *
- * This program is distributed in the hope that it will be useful,
+ * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, see <http://www.gnu.org/licenses/>
+ *
+ * Contributions after 2012-01-13 are licensed under the terms of the
+ * GNU GPL, version 2 or (at your option) any later version.
  */
 
 #ifndef HW_NV2A_VSH_H
@@ -63,10 +65,10 @@ enum VshFoggen {
 enum VshSkinning {
     SKINNING_OFF,
     SKINNING_1WEIGHTS,
-    SKINNING_2WEIGHTS2MATRICES,
     SKINNING_2WEIGHTS,
-    SKINNING_3WEIGHTS3MATRICES,
     SKINNING_3WEIGHTS,
+    SKINNING_2WEIGHTS2MATRICES,
+    SKINNING_3WEIGHTS3MATRICES,
     SKINNING_4WEIGHTS4MATRICES,
 };
 

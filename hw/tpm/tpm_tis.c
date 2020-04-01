@@ -31,7 +31,6 @@
 #include "sysemu/tpm_backend.h"
 #include "tpm_int.h"
 #include "tpm_util.h"
-#include "tpm_ppi.h"
 #include "trace.h"
 
 #define TPM_TIS_NUM_LOCALITIES      5     /* per spec */
@@ -82,9 +81,6 @@ typedef struct TPMState {
     TPMVersion be_tpm_version;
 
     size_t be_buffer_size;
-
-    bool ppi_enabled;
-    TPMPPI ppi;
 } TPMState;
 
 #define TPM(obj) OBJECT_CHECK(TPMState, (obj), TYPE_TPM_TIS)
@@ -106,26 +102,17 @@ static uint8_t tpm_tis_locality_from_addr(hwaddr addr)
 static void tpm_tis_show_buffer(const unsigned char *buffer,
                                 size_t buffer_size, const char *string)
 {
-    size_t len, i;
-    char *line_buffer, *p;
+    uint32_t len, i;
 
     len = MIN(tpm_cmd_get_size(buffer), buffer_size);
-
-    /*
-     * allocate enough room for 3 chars per buffer entry plus a
-     * newline after every 16 chars and a final null terminator.
-     */
-    line_buffer = g_malloc(len * 3 + (len / 16) + 1);
-
-    for (i = 0, p = line_buffer; i < len; i++) {
+    printf("tpm_tis: %s length = %d\n", string, len);
+    for (i = 0; i < len; i++) {
         if (i && !(i % 16)) {
-            p += sprintf(p, "\n");
+            printf("\n");
         }
-        p += sprintf(p, "%.2X ", buffer[i]);
+        printf("%.2X ", buffer[i]);
     }
-    trace_tpm_tis_show_buffer(string, len, line_buffer);
-
-    g_free(line_buffer);
+    printf("\n");
 }
 
 /*
@@ -152,8 +139,9 @@ static void tpm_tis_sts_set(TPMLocality *l, uint32_t flags)
  */
 static void tpm_tis_tpm_send(TPMState *s, uint8_t locty)
 {
-    if (trace_event_get_state_backends(TRACE_TPM_TIS_SHOW_BUFFER)) {
-        tpm_tis_show_buffer(s->buffer, s->be_buffer_size, "To TPM");
+    if (DEBUG_TIS) {
+        tpm_tis_show_buffer(s->buffer, s->be_buffer_size,
+                            "tpm_tis: To TPM");
     }
 
     /*
@@ -245,7 +233,7 @@ static void tpm_tis_new_active_locality(TPMState *s, uint8_t new_active_locty)
 }
 
 /* abort -- this function switches the locality */
-static void tpm_tis_abort(TPMState *s)
+static void tpm_tis_abort(TPMState *s, uint8_t locty)
 {
     s->rw_offset = 0;
 
@@ -275,9 +263,7 @@ static void tpm_tis_prep_abort(TPMState *s, uint8_t locty, uint8_t newlocty)
 {
     uint8_t busy_locty;
 
-    assert(TPM_TIS_IS_VALID_LOCTY(newlocty));
-
-    s->aborting_locty = locty; /* may also be TPM_TIS_NO_LOCALITY */
+    s->aborting_locty = locty;
     s->next_locty = newlocty;  /* locality after successful abort */
 
     /*
@@ -295,7 +281,7 @@ static void tpm_tis_prep_abort(TPMState *s, uint8_t locty, uint8_t newlocty)
         }
     }
 
-    tpm_tis_abort(s);
+    tpm_tis_abort(s, locty);
 }
 
 /*
@@ -307,11 +293,9 @@ static void tpm_tis_request_completed(TPMIf *ti, int ret)
     uint8_t locty = s->cmd.locty;
     uint8_t l;
 
-    assert(TPM_TIS_IS_VALID_LOCTY(locty));
-
     if (s->cmd.selftest_done) {
         for (l = 0; l < TPM_TIS_NUM_LOCALITIES; l++) {
-            s->loc[l].sts |= TPM_TIS_STS_SELFTEST_DONE;
+            s->loc[locty].sts |= TPM_TIS_STS_SELFTEST_DONE;
         }
     }
 
@@ -321,12 +305,13 @@ static void tpm_tis_request_completed(TPMIf *ti, int ret)
     s->loc[locty].state = TPM_TIS_STATE_COMPLETION;
     s->rw_offset = 0;
 
-    if (trace_event_get_state_backends(TRACE_TPM_TIS_SHOW_BUFFER)) {
-        tpm_tis_show_buffer(s->buffer, s->be_buffer_size, "From TPM");
+    if (DEBUG_TIS) {
+        tpm_tis_show_buffer(s->buffer, s->be_buffer_size,
+                            "tpm_tis: From TPM");
     }
 
     if (TPM_TIS_IS_VALID_LOCTY(s->next_locty)) {
-        tpm_tis_abort(s);
+        tpm_tis_abort(s, locty);
     }
 
     tpm_tis_raise_irq(s, locty,
@@ -631,7 +616,7 @@ static void tpm_tis_mmio_write(void *opaque, hwaddr addr,
                 }
 
                 /* cancel any seize by a lower locality */
-                for (l = 0; l < locty; l++) {
+                for (l = 0; l < locty - 1; l++) {
                     s->loc[l].access &= ~TPM_TIS_ACCESS_SEIZE;
                 }
 
@@ -879,9 +864,6 @@ static void tpm_tis_reset(DeviceState *dev)
     s->be_buffer_size = MIN(tpm_backend_get_buffer_size(s->be_driver),
                             TPM_TIS_BUFFER_MAX);
 
-    if (s->ppi_enabled) {
-        tpm_ppi_reset(&s->ppi);
-    }
     tpm_backend_reset(s->be_driver);
 
     s->active_locty = TPM_TIS_NO_LOCALITY;
@@ -912,63 +894,14 @@ static void tpm_tis_reset(DeviceState *dev)
     tpm_backend_startup_tpm(s->be_driver, s->be_buffer_size);
 }
 
-/* persistent state handling */
-
-static int tpm_tis_pre_save(void *opaque)
-{
-    TPMState *s = opaque;
-    uint8_t locty = s->active_locty;
-
-    trace_tpm_tis_pre_save(locty, s->rw_offset);
-
-    if (DEBUG_TIS) {
-        tpm_tis_dump_state(opaque, 0);
-    }
-
-    /*
-     * Synchronize with backend completion.
-     */
-    tpm_backend_finish_sync(s->be_driver);
-
-    return 0;
-}
-
-static const VMStateDescription vmstate_locty = {
-    .name = "tpm-tis/locty",
-    .version_id = 0,
-    .fields      = (VMStateField[]) {
-        VMSTATE_UINT32(state, TPMLocality),
-        VMSTATE_UINT32(inte, TPMLocality),
-        VMSTATE_UINT32(ints, TPMLocality),
-        VMSTATE_UINT8(access, TPMLocality),
-        VMSTATE_UINT32(sts, TPMLocality),
-        VMSTATE_UINT32(iface_id, TPMLocality),
-        VMSTATE_END_OF_LIST(),
-    }
-};
-
 static const VMStateDescription vmstate_tpm_tis = {
-    .name = "tpm-tis",
-    .version_id = 0,
-    .pre_save  = tpm_tis_pre_save,
-    .fields = (VMStateField[]) {
-        VMSTATE_BUFFER(buffer, TPMState),
-        VMSTATE_UINT16(rw_offset, TPMState),
-        VMSTATE_UINT8(active_locty, TPMState),
-        VMSTATE_UINT8(aborting_locty, TPMState),
-        VMSTATE_UINT8(next_locty, TPMState),
-
-        VMSTATE_STRUCT_ARRAY(loc, TPMState, TPM_TIS_NUM_LOCALITIES, 0,
-                             vmstate_locty, TPMLocality),
-
-        VMSTATE_END_OF_LIST()
-    }
+    .name = "tpm",
+    .unmigratable = 1,
 };
 
 static Property tpm_tis_properties[] = {
     DEFINE_PROP_UINT32("irq", TPMState, irq_num, TPM_TIS_IRQ),
     DEFINE_PROP_TPMBE("tpmdev", TPMState, be_driver),
-    DEFINE_PROP_BOOL("ppi", TPMState, ppi_enabled, true),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -995,11 +928,6 @@ static void tpm_tis_realizefn(DeviceState *dev, Error **errp)
 
     memory_region_add_subregion(isa_address_space(ISA_DEVICE(dev)),
                                 TPM_TIS_ADDR_BASE, &s->mmio);
-
-    if (s->ppi_enabled) {
-        tpm_ppi_init(&s->ppi, isa_address_space(ISA_DEVICE(dev)),
-                     TPM_PPI_ADDR_BASE, OBJECT(s));
-    }
 }
 
 static void tpm_tis_initfn(Object *obj)

@@ -83,6 +83,7 @@ typedef struct BlkMigBlock {
     BlkMigDevState *bmds;
     int64_t sector;
     int nr_sectors;
+    struct iovec iov;
     QEMUIOVector qiov;
     BlockAIOCB *aiocb;
 
@@ -92,12 +93,12 @@ typedef struct BlkMigBlock {
 } BlkMigBlock;
 
 typedef struct BlkMigState {
-    QSIMPLEQ_HEAD(, BlkMigDevState) bmds_list;
+    QSIMPLEQ_HEAD(bmds_list, BlkMigDevState) bmds_list;
     int64_t total_sector_sum;
     bool zero_blocks;
 
     /* Protected by lock.  */
-    QSIMPLEQ_HEAD(, BlkMigBlock) blk_list;
+    QSIMPLEQ_HEAD(blk_list, BlkMigBlock) blk_list;
     int submitted;
     int read_done;
 
@@ -313,7 +314,9 @@ static int mig_save_device_bulk(QEMUFile *f, BlkMigDevState *bmds)
     blk->sector = cur_sector;
     blk->nr_sectors = nr_sectors;
 
-    qemu_iovec_init_buf(&blk->qiov, blk->buf, nr_sectors * BDRV_SECTOR_SIZE);
+    blk->iov.iov_base = blk->buf;
+    blk->iov.iov_len = nr_sectors * BDRV_SECTOR_SIZE;
+    qemu_iovec_init_external(&blk->qiov, &blk->iov, 1);
 
     blk_mig_lock();
     block_mig_state.submitted++;
@@ -553,8 +556,9 @@ static int mig_save_device_dirty(QEMUFile *f, BlkMigDevState *bmds,
             blk->nr_sectors = nr_sectors;
 
             if (is_async) {
-                qemu_iovec_init_buf(&blk->qiov, blk->buf,
-                                    nr_sectors * BDRV_SECTOR_SIZE);
+                blk->iov.iov_base = blk->buf;
+                blk->iov.iov_len = nr_sectors * BDRV_SECTOR_SIZE;
+                qemu_iovec_init_external(&blk->qiov, &blk->iov, 1);
 
                 blk->aiocb = blk_aio_preadv(bmds->blk,
                                             sector * BDRV_SECTOR_SIZE,

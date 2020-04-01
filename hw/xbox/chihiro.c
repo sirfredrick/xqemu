@@ -4,18 +4,18 @@
  * Copyright (c) 2013 espes
  * Copyright (c) 2018 Matt Borgerson
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 or
+ * (at your option) version 3 of the License.
  *
- * This library is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "qemu/osdep.h"
@@ -23,6 +23,7 @@
 #include "hw/loader.h"
 #include "hw/i386/pc.h"
 #include "hw/i386/apic.h"
+#include "hw/smbios/smbios.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_ids.h"
 #include "hw/usb.h"
@@ -34,6 +35,7 @@
 #include "sysemu/sysemu.h"
 #include "hw/sysbus.h"
 #include "sysemu/arch_init.h"
+#include "hw/i2c/smbus.h"
 #include "hw/xen/xen.h"
 #include "exec/memory.h"
 #include "exec/address-spaces.h"
@@ -319,9 +321,9 @@ static const uint8_t eeprom[] = {
 static void chihiro_init(MachineState *machine)
 {
     const char *mediaboard_rom_file = object_property_get_str(
-        qdev_get_machine(), "mediaboard-rom", NULL);
+        qdev_get_machine(), "mediaboard_rom", NULL);
     const char *mediaboard_filesystem_file = object_property_get_str(
-        qdev_get_machine(), "mediaboard-filesystem", NULL);
+        qdev_get_machine(), "mediaboard_filesystem", NULL);
     chihiro_ide_interface_init(mediaboard_rom_file,
                                mediaboard_filesystem_file);
 
@@ -386,16 +388,16 @@ static void machine_set_mediaboard_filesystem(Object *obj, const char *value,
 
 static inline void chihiro_machine_initfn(Object *obj)
 {
-    object_property_add_str(obj, "mediaboard-rom",
+    object_property_add_str(obj, "mediaboard_rom",
                             machine_get_mediaboard_rom,
                             machine_set_mediaboard_rom, NULL);
-    object_property_set_description(obj, "mediaboard-rom",
+    object_property_set_description(obj, "mediaboard_rom",
                                     "Chihiro mediaboard ROM", NULL);
 
-    object_property_add_str(obj, "mediaboard-filesystem",
+    object_property_add_str(obj, "mediaboard_filesystem",
                             machine_get_mediaboard_filesystem,
                             machine_set_mediaboard_filesystem, NULL);
-    object_property_set_description(obj, "mediaboard-filesystem",
+    object_property_set_description(obj, "mediaboard_filesystem",
                                     "Chihiro mediaboard filesystem", NULL);
 }
 

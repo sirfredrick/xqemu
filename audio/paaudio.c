@@ -2,7 +2,6 @@
 #include "qemu/osdep.h"
 #include "qemu-common.h"
 #include "audio.h"
-#include "qapi/opts-visitor.h"
 
 #include <pulse/pulseaudio.h>
 
@@ -11,7 +10,14 @@
 #include "audio_pt_int.h"
 
 typedef struct {
-    Audiodev *dev;
+    int samples;
+    char *server;
+    char *sink;
+    char *source;
+} PAConf;
+
+typedef struct {
+    PAConf conf;
     pa_threaded_mainloop *mainloop;
     pa_context *context;
 } paaudio;
@@ -26,7 +32,6 @@ typedef struct {
     void *pcm_buf;
     struct audio_pt pt;
     paaudio *g;
-    int samples;
 } PAVoiceOut;
 
 typedef struct {
@@ -41,7 +46,6 @@ typedef struct {
     const void *read_data;
     size_t read_index, read_length;
     paaudio *g;
-    int samples;
 } PAVoiceIn;
 
 static void qpa_audio_fini(void *opaque);
@@ -223,7 +227,7 @@ static void *qpa_thread_out (void *arg)
             }
         }
 
-        decr = to_mix = audio_MIN(pa->live, pa->samples >> 5);
+        decr = to_mix = audio_MIN (pa->live, pa->g->conf.samples >> 2);
         rpos = pa->rpos;
 
         if (audio_pt_unlock(&pa->pt, __func__)) {
@@ -315,7 +319,7 @@ static void *qpa_thread_in (void *arg)
             }
         }
 
-        incr = to_grab = audio_MIN(pa->dead, pa->samples >> 5);
+        incr = to_grab = audio_MIN (pa->dead, pa->g->conf.samples >> 2);
         wpos = pa->wpos;
 
         if (audio_pt_unlock(&pa->pt, __func__)) {
@@ -381,21 +385,21 @@ static int qpa_read (SWVoiceIn *sw, void *buf, int len)
     return audio_pcm_sw_read (sw, buf, len);
 }
 
-static pa_sample_format_t audfmt_to_pa (AudioFormat afmt, int endianness)
+static pa_sample_format_t audfmt_to_pa (audfmt_e afmt, int endianness)
 {
     int format;
 
     switch (afmt) {
-    case AUDIO_FORMAT_S8:
-    case AUDIO_FORMAT_U8:
+    case AUD_FMT_S8:
+    case AUD_FMT_U8:
         format = PA_SAMPLE_U8;
         break;
-    case AUDIO_FORMAT_S16:
-    case AUDIO_FORMAT_U16:
+    case AUD_FMT_S16:
+    case AUD_FMT_U16:
         format = endianness ? PA_SAMPLE_S16BE : PA_SAMPLE_S16LE;
         break;
-    case AUDIO_FORMAT_S32:
-    case AUDIO_FORMAT_U32:
+    case AUD_FMT_S32:
+    case AUD_FMT_U32:
         format = endianness ? PA_SAMPLE_S32BE : PA_SAMPLE_S32LE;
         break;
     default:
@@ -406,26 +410,26 @@ static pa_sample_format_t audfmt_to_pa (AudioFormat afmt, int endianness)
     return format;
 }
 
-static AudioFormat pa_to_audfmt (pa_sample_format_t fmt, int *endianness)
+static audfmt_e pa_to_audfmt (pa_sample_format_t fmt, int *endianness)
 {
     switch (fmt) {
     case PA_SAMPLE_U8:
-        return AUDIO_FORMAT_U8;
+        return AUD_FMT_U8;
     case PA_SAMPLE_S16BE:
         *endianness = 1;
-        return AUDIO_FORMAT_S16;
+        return AUD_FMT_S16;
     case PA_SAMPLE_S16LE:
         *endianness = 0;
-        return AUDIO_FORMAT_S16;
+        return AUD_FMT_S16;
     case PA_SAMPLE_S32BE:
         *endianness = 1;
-        return AUDIO_FORMAT_S32;
+        return AUD_FMT_S32;
     case PA_SAMPLE_S32LE:
         *endianness = 0;
-        return AUDIO_FORMAT_S32;
+        return AUD_FMT_S32;
     default:
         dolog ("Internal logic error: Bad pa_sample_format %d\n", fmt);
-        return AUDIO_FORMAT_U8;
+        return AUD_FMT_U8;
     }
 }
 
@@ -542,15 +546,17 @@ static int qpa_init_out(HWVoiceOut *hw, struct audsettings *as,
     struct audsettings obt_as = *as;
     PAVoiceOut *pa = (PAVoiceOut *) hw;
     paaudio *g = pa->g = drv_opaque;
-    AudiodevPaOptions *popts = &g->dev->u.pa;
-    AudiodevPaPerDirectionOptions *ppdo = popts->out;
 
     ss.format = audfmt_to_pa (as->fmt, as->endianness);
     ss.channels = as->nchannels;
     ss.rate = as->freq;
 
-    ba.tlength = pa_usec_to_bytes(ppdo->latency, &ss);
-    ba.minreq = -1;
+    /*
+     * qemu audio tick runs at 100 Hz (by default), so processing
+     * data chunks worth 10 ms of sound should be a good fit.
+     */
+    ba.tlength = pa_usec_to_bytes (10 * 1000, &ss);
+    ba.minreq = pa_usec_to_bytes (5 * 1000, &ss);
     ba.maxlength = -1;
     ba.prebuf = -1;
 
@@ -560,7 +566,7 @@ static int qpa_init_out(HWVoiceOut *hw, struct audsettings *as,
         g,
         "qemu",
         PA_STREAM_PLAYBACK,
-        ppdo->has_name ? ppdo->name : NULL,
+        g->conf.sink,
         &ss,
         NULL,                   /* channel map */
         &ba,                    /* buffering attributes */
@@ -572,9 +578,7 @@ static int qpa_init_out(HWVoiceOut *hw, struct audsettings *as,
     }
 
     audio_pcm_init_info (&hw->info, &obt_as);
-    hw->samples = pa->samples = audio_buffer_samples(
-        qapi_AudiodevPaPerDirectionOptions_base(ppdo),
-        &obt_as, ppdo->buffer_length);
+    hw->samples = g->conf.samples;
     pa->pcm_buf = audio_calloc(__func__, hw->samples, 1 << hw->info.shift);
     pa->rpos = hw->rpos;
     if (!pa->pcm_buf) {
@@ -605,21 +609,13 @@ static int qpa_init_in(HWVoiceIn *hw, struct audsettings *as, void *drv_opaque)
 {
     int error;
     pa_sample_spec ss;
-    pa_buffer_attr ba;
     struct audsettings obt_as = *as;
     PAVoiceIn *pa = (PAVoiceIn *) hw;
     paaudio *g = pa->g = drv_opaque;
-    AudiodevPaOptions *popts = &g->dev->u.pa;
-    AudiodevPaPerDirectionOptions *ppdo = popts->in;
 
     ss.format = audfmt_to_pa (as->fmt, as->endianness);
     ss.channels = as->nchannels;
     ss.rate = as->freq;
-
-    ba.fragsize = pa_usec_to_bytes(ppdo->latency, &ss);
-    ba.maxlength = -1;
-    ba.minreq = -1;
-    ba.prebuf = -1;
 
     obt_as.fmt = pa_to_audfmt (ss.format, &obt_as.endianness);
 
@@ -627,10 +623,10 @@ static int qpa_init_in(HWVoiceIn *hw, struct audsettings *as, void *drv_opaque)
         g,
         "qemu",
         PA_STREAM_RECORD,
-        ppdo->has_name ? ppdo->name : NULL,
+        g->conf.source,
         &ss,
         NULL,                   /* channel map */
-        &ba,                    /* buffering attributes */
+        NULL,                   /* buffering attributes */
         &error
         );
     if (!pa->stream) {
@@ -639,9 +635,7 @@ static int qpa_init_in(HWVoiceIn *hw, struct audsettings *as, void *drv_opaque)
     }
 
     audio_pcm_init_info (&hw->info, &obt_as);
-    hw->samples = pa->samples = audio_buffer_samples(
-        qapi_AudiodevPaPerDirectionOptions_base(ppdo),
-        &obt_as, ppdo->buffer_length);
+    hw->samples = g->conf.samples;
     pa->pcm_buf = audio_calloc(__func__, hw->samples, 1 << hw->info.shift);
     pa->wpos = hw->wpos;
     if (!pa->pcm_buf) {
@@ -813,54 +807,15 @@ static int qpa_ctl_in (HWVoiceIn *hw, int cmd, ...)
     return 0;
 }
 
-static int qpa_validate_per_direction_opts(Audiodev *dev,
-                                           AudiodevPaPerDirectionOptions *pdo)
+/* common */
+static PAConf glob_conf = {
+    .samples = 4096,
+};
+
+static void *qpa_audio_init (void)
 {
-    if (!pdo->has_buffer_length) {
-        pdo->has_buffer_length = true;
-        pdo->buffer_length = 46440;
-    }
-    if (!pdo->has_latency) {
-        pdo->has_latency = true;
-        pdo->latency = 15000;
-    }
-    return 1;
-}
-
-static void *qpa_audio_init(Audiodev *dev)
-{
-    paaudio *g;
-    AudiodevPaOptions *popts = &dev->u.pa;
-    const char *server;
-
-    if (!popts->has_server) {
-        char pidfile[64];
-        char *runtime;
-        struct stat st;
-
-        runtime = getenv("XDG_RUNTIME_DIR");
-        if (!runtime) {
-            return NULL;
-        }
-        snprintf(pidfile, sizeof(pidfile), "%s/pulse/pid", runtime);
-        if (stat(pidfile, &st) != 0) {
-            return NULL;
-        }
-    }
-
-    assert(dev->driver == AUDIODEV_DRIVER_PA);
-
-    g = g_malloc(sizeof(paaudio));
-    server = popts->has_server ? popts->server : NULL;
-
-    if (!qpa_validate_per_direction_opts(dev, popts->in)) {
-        goto fail;
-    }
-    if (!qpa_validate_per_direction_opts(dev, popts->out)) {
-        goto fail;
-    }
-
-    g->dev = dev;
+    paaudio *g = g_malloc(sizeof(paaudio));
+    g->conf = glob_conf;
     g->mainloop = NULL;
     g->context = NULL;
 
@@ -870,14 +825,14 @@ static void *qpa_audio_init(Audiodev *dev)
     }
 
     g->context = pa_context_new (pa_threaded_mainloop_get_api (g->mainloop),
-                                 server);
+                                 g->conf.server);
     if (!g->context) {
         goto fail;
     }
 
     pa_context_set_state_callback (g->context, context_state_cb, g);
 
-    if (pa_context_connect(g->context, server, 0, NULL) < 0) {
+    if (pa_context_connect (g->context, g->conf.server, 0, NULL) < 0) {
         qpa_logerr (pa_context_errno (g->context),
                     "pa_context_connect() failed\n");
         goto fail;
@@ -940,6 +895,34 @@ static void qpa_audio_fini (void *opaque)
     g_free(g);
 }
 
+struct audio_option qpa_options[] = {
+    {
+        .name  = "SAMPLES",
+        .tag   = AUD_OPT_INT,
+        .valp  = &glob_conf.samples,
+        .descr = "buffer size in samples"
+    },
+    {
+        .name  = "SERVER",
+        .tag   = AUD_OPT_STR,
+        .valp  = &glob_conf.server,
+        .descr = "server address"
+    },
+    {
+        .name  = "SINK",
+        .tag   = AUD_OPT_STR,
+        .valp  = &glob_conf.sink,
+        .descr = "sink device name"
+    },
+    {
+        .name  = "SOURCE",
+        .tag   = AUD_OPT_STR,
+        .valp  = &glob_conf.source,
+        .descr = "source device name"
+    },
+    { /* End of list */ }
+};
+
 static struct audio_pcm_ops qpa_pcm_ops = {
     .init_out = qpa_init_out,
     .fini_out = qpa_fini_out,
@@ -957,6 +940,7 @@ static struct audio_pcm_ops qpa_pcm_ops = {
 static struct audio_driver pa_audio_driver = {
     .name           = "pa",
     .descr          = "http://www.pulseaudio.org/",
+    .options        = qpa_options,
     .init           = qpa_audio_init,
     .fini           = qpa_audio_fini,
     .pcm_ops        = &qpa_pcm_ops,

@@ -47,7 +47,9 @@ struct BlockBackend {
     QTAILQ_ENTRY(BlockBackend) monitor_link; /* for monitor_block_backends */
     BlockBackendPublic public;
 
-    DeviceState *dev;           /* attached device model, if any */
+    void *dev;                  /* attached device model, if any */
+    bool legacy_dev;            /* true if dev is not a DeviceState */
+    /* TODO change to DeviceState when all users are qdevified */
     const BlockDevOps *dev_ops;
     void *dev_opaque;
 
@@ -86,6 +88,7 @@ struct BlockBackend {
      * Accessed with atomic ops.
      */
     unsigned int in_flight;
+    AioWait wait;
 };
 
 typedef struct BlockBackendAIOCB {
@@ -118,7 +121,6 @@ static void blk_root_inherit_options(int *child_flags, QDict *child_options,
     abort();
 }
 static void blk_root_drained_begin(BdrvChild *child);
-static bool blk_root_drained_poll(BdrvChild *child);
 static void blk_root_drained_end(BdrvChild *child);
 
 static void blk_root_change_media(BdrvChild *child, bool load);
@@ -292,7 +294,6 @@ static const BdrvChildRole child_root = {
     .get_parent_desc    = blk_root_get_parent_desc,
 
     .drained_begin      = blk_root_drained_begin,
-    .drained_poll       = blk_root_drained_poll,
     .drained_end        = blk_root_drained_end,
 
     .activate           = blk_root_activate,
@@ -322,9 +323,6 @@ BlockBackend *blk_new(uint64_t perm, uint64_t shared_perm)
     blk->perm = perm;
     blk->shared_perm = shared_perm;
     blk_set_enable_write_cache(blk, true);
-
-    blk->on_read_error = BLOCKDEV_ON_ERROR_REPORT;
-    blk->on_write_error = BLOCKDEV_ON_ERROR_ENOSPC;
 
     block_acct_init(&blk->stats);
 
@@ -421,6 +419,7 @@ static void drive_info_del(DriveInfo *dinfo)
         return;
     }
     qemu_opts_del(dinfo->opts);
+    g_free(dinfo->serial);
     g_free(dinfo);
 }
 
@@ -435,7 +434,6 @@ int blk_get_refcnt(BlockBackend *blk)
  */
 void blk_ref(BlockBackend *blk)
 {
-    assert(blk->refcnt > 0);
     blk->refcnt++;
 }
 
@@ -448,13 +446,7 @@ void blk_unref(BlockBackend *blk)
 {
     if (blk) {
         assert(blk->refcnt > 0);
-        if (blk->refcnt > 1) {
-            blk->refcnt--;
-        } else {
-            blk_drain(blk);
-            /* blk_drain() cannot resurrect blk, nobody held a reference */
-            assert(blk->refcnt == 1);
-            blk->refcnt = 0;
+        if (!--blk->refcnt) {
             blk_delete(blk);
         }
     }
@@ -776,11 +768,6 @@ void blk_remove_bs(BlockBackend *blk)
 
     blk_update_root_state(blk);
 
-    /* bdrv_root_unref_child() will cause blk->root to become stale and may
-     * switch to a completion coroutine later on. Let's drain all I/O here
-     * to avoid that and a potential QEMU crash.
-     */
-    blk_drain(blk);
     bdrv_root_unref_child(blk->root);
     blk->root = NULL;
 }
@@ -834,11 +821,7 @@ void blk_get_perm(BlockBackend *blk, uint64_t *perm, uint64_t *shared_perm)
     *shared_perm = blk->shared_perm;
 }
 
-/*
- * Attach device model @dev to @blk.
- * Return 0 on success, -EBUSY when a device model is attached already.
- */
-int blk_attach_dev(BlockBackend *blk, DeviceState *dev)
+static int blk_do_attach_dev(BlockBackend *blk, void *dev)
 {
     if (blk->dev) {
         return -EBUSY;
@@ -853,16 +836,40 @@ int blk_attach_dev(BlockBackend *blk, DeviceState *dev)
 
     blk_ref(blk);
     blk->dev = dev;
+    blk->legacy_dev = false;
     blk_iostatus_reset(blk);
 
     return 0;
 }
 
 /*
+ * Attach device model @dev to @blk.
+ * Return 0 on success, -EBUSY when a device model is attached already.
+ */
+int blk_attach_dev(BlockBackend *blk, DeviceState *dev)
+{
+    return blk_do_attach_dev(blk, dev);
+}
+
+/*
+ * Attach device model @dev to @blk.
+ * @blk must not have a device model attached already.
+ * TODO qdevified devices don't use this, remove when devices are qdevified
+ */
+void blk_attach_dev_legacy(BlockBackend *blk, void *dev)
+{
+    if (blk_do_attach_dev(blk, dev) < 0) {
+        abort();
+    }
+    blk->legacy_dev = true;
+}
+
+/*
  * Detach device model @dev from @blk.
  * @dev must be currently attached to @blk.
  */
-void blk_detach_dev(BlockBackend *blk, DeviceState *dev)
+void blk_detach_dev(BlockBackend *blk, void *dev)
+/* TODO change to DeviceState *dev when all users are qdevified */
 {
     assert(blk->dev == dev);
     blk->dev = NULL;
@@ -876,7 +883,8 @@ void blk_detach_dev(BlockBackend *blk, DeviceState *dev)
 /*
  * Return the device model attached to @blk if any, else null.
  */
-DeviceState *blk_get_attached_dev(BlockBackend *blk)
+void *blk_get_attached_dev(BlockBackend *blk)
+/* TODO change to return DeviceState * when all users are qdevified */
 {
     return blk->dev;
 }
@@ -885,15 +893,17 @@ DeviceState *blk_get_attached_dev(BlockBackend *blk)
  * device attached to the BlockBackend. */
 char *blk_get_attached_dev_id(BlockBackend *blk)
 {
-    DeviceState *dev = blk->dev;
+    DeviceState *dev;
+
+    assert(!blk->legacy_dev);
+    dev = blk->dev;
 
     if (!dev) {
         return g_strdup("");
     } else if (dev->id) {
         return g_strdup(dev->id);
     }
-
-    return object_get_canonical_path(OBJECT(dev)) ?: g_strdup("");
+    return object_get_canonical_path(OBJECT(dev));
 }
 
 /*
@@ -923,6 +933,11 @@ BlockBackend *blk_by_dev(void *dev)
 void blk_set_dev_ops(BlockBackend *blk, const BlockDevOps *ops,
                      void *opaque)
 {
+    /* All drivers that use blk_set_dev_ops() are qdevified and we want to keep
+     * it that way, so we can assume blk->dev, if present, is a DeviceState if
+     * blk->dev_ops is set. Non-device users may use dev_ops without device. */
+    assert(!blk->legacy_dev);
+
     blk->dev_ops = ops;
     blk->dev_opaque = opaque;
 
@@ -948,6 +963,8 @@ void blk_dev_change_media_cb(BlockBackend *blk, bool load, Error **errp)
         bool tray_was_open, tray_is_open;
         Error *local_err = NULL;
 
+        assert(!blk->legacy_dev);
+
         tray_was_open = blk_dev_is_tray_open(blk);
         blk->dev_ops->change_media_cb(blk->dev_opaque, load, &local_err);
         if (local_err) {
@@ -959,7 +976,8 @@ void blk_dev_change_media_cb(BlockBackend *blk, bool load, Error **errp)
 
         if (tray_was_open != tray_is_open) {
             char *id = blk_get_attached_dev_id(blk);
-            qapi_event_send_device_tray_moved(blk_name(blk), id, tray_is_open);
+            qapi_event_send_device_tray_moved(blk_name(blk), id, tray_is_open,
+                                              &error_abort);
             g_free(id);
         }
     }
@@ -1187,7 +1205,6 @@ static void blk_read_entry(void *opaque)
 
     rwco->ret = blk_co_preadv(rwco->blk, rwco->offset, qiov->size,
                               qiov, rwco->flags);
-    aio_wait_kick();
 }
 
 static void blk_write_entry(void *opaque)
@@ -1197,15 +1214,23 @@ static void blk_write_entry(void *opaque)
 
     rwco->ret = blk_co_pwritev(rwco->blk, rwco->offset, qiov->size,
                                qiov, rwco->flags);
-    aio_wait_kick();
 }
 
 static int blk_prw(BlockBackend *blk, int64_t offset, uint8_t *buf,
                    int64_t bytes, CoroutineEntry co_entry,
                    BdrvRequestFlags flags)
 {
-    QEMUIOVector qiov = QEMU_IOVEC_INIT_BUF(qiov, buf, bytes);
-    BlkRwCo rwco = {
+    QEMUIOVector qiov;
+    struct iovec iov;
+    BlkRwCo rwco;
+
+    iov = (struct iovec) {
+        .iov_base = buf,
+        .iov_len = bytes,
+    };
+    qemu_iovec_init_external(&qiov, &iov, 1);
+
+    rwco = (BlkRwCo) {
         .blk    = blk,
         .offset = offset,
         .iobuf  = &qiov,
@@ -1253,15 +1278,15 @@ int blk_make_zero(BlockBackend *blk, BdrvRequestFlags flags)
     return bdrv_make_zero(blk->root, flags);
 }
 
-void blk_inc_in_flight(BlockBackend *blk)
+static void blk_inc_in_flight(BlockBackend *blk)
 {
     atomic_inc(&blk->in_flight);
 }
 
-void blk_dec_in_flight(BlockBackend *blk)
+static void blk_dec_in_flight(BlockBackend *blk)
 {
     atomic_dec(&blk->in_flight);
-    aio_wait_kick();
+    aio_wait_kick(&blk->wait);
 }
 
 static void error_callback_bh(void *opaque)
@@ -1302,8 +1327,8 @@ static const AIOCBInfo blk_aio_em_aiocb_info = {
 static void blk_aio_complete(BlkAioEmAIOCB *acb)
 {
     if (acb->has_returned) {
-        acb->common.cb(acb->common.opaque, acb->rwco.ret);
         blk_dec_in_flight(acb->rwco.blk);
+        acb->common.cb(acb->common.opaque, acb->rwco.ret);
         qemu_aio_unref(acb);
     }
 }
@@ -1500,7 +1525,6 @@ static void blk_ioctl_entry(void *opaque)
 
     rwco->ret = blk_co_ioctl(rwco->blk, rwco->offset,
                              qiov->iov[0].iov_base);
-    aio_wait_kick();
 }
 
 int blk_ioctl(BlockBackend *blk, unsigned long int req, void *buf)
@@ -1531,7 +1555,7 @@ int blk_co_pdiscard(BlockBackend *blk, int64_t offset, int bytes)
         return ret;
     }
 
-    return bdrv_co_pdiscard(blk->root, offset, bytes);
+    return bdrv_co_pdiscard(blk_bs(blk), offset, bytes);
 }
 
 int blk_co_flush(BlockBackend *blk)
@@ -1547,7 +1571,6 @@ static void blk_flush_entry(void *opaque)
 {
     BlkRwCo *rwco = opaque;
     rwco->ret = blk_co_flush(rwco->blk);
-    aio_wait_kick();
 }
 
 int blk_flush(BlockBackend *blk)
@@ -1564,8 +1587,9 @@ void blk_drain(BlockBackend *blk)
     }
 
     /* We may have -ENOMEDIUM completions in flight */
-    AIO_WAIT_WHILE(blk_get_aio_context(blk),
-                   atomic_mb_read(&blk->in_flight) > 0);
+    AIO_WAIT_WHILE(&blk->wait,
+            blk_get_aio_context(blk),
+            atomic_mb_read(&blk->in_flight) > 0);
 
     if (bs) {
         bdrv_drained_end(bs);
@@ -1584,7 +1608,8 @@ void blk_drain_all(void)
         aio_context_acquire(ctx);
 
         /* We may have -ENOMEDIUM completions in flight */
-        AIO_WAIT_WHILE(ctx, atomic_mb_read(&blk->in_flight) > 0);
+        AIO_WAIT_WHILE(&blk->wait, ctx,
+                atomic_mb_read(&blk->in_flight) > 0);
 
         aio_context_release(ctx);
     }
@@ -1636,7 +1661,8 @@ static void send_qmp_error_event(BlockBackend *blk,
     qapi_event_send_block_io_error(blk_name(blk), !!bs,
                                    bs ? bdrv_get_node_name(bs) : NULL, optype,
                                    action, blk_iostatus_is_enabled(blk),
-                                   error == ENOSPC, strerror(error));
+                                   error == ENOSPC, strerror(error),
+                                   &error_abort);
 }
 
 /* This is done by device models because, while the block layer knows
@@ -1671,7 +1697,7 @@ void blk_error_action(BlockBackend *blk, BlockErrorAction action,
     }
 }
 
-bool blk_is_read_only(BlockBackend *blk)
+int blk_is_read_only(BlockBackend *blk)
 {
     BlockDriverState *bs = blk_bs(blk);
 
@@ -1682,18 +1708,18 @@ bool blk_is_read_only(BlockBackend *blk)
     }
 }
 
-bool blk_is_sg(BlockBackend *blk)
+int blk_is_sg(BlockBackend *blk)
 {
     BlockDriverState *bs = blk_bs(blk);
 
     if (!bs) {
-        return false;
+        return 0;
     }
 
     return bdrv_is_sg(bs);
 }
 
-bool blk_enable_write_cache(BlockBackend *blk)
+int blk_enable_write_cache(BlockBackend *blk)
 {
     return blk->enable_write_cache;
 }
@@ -1741,6 +1767,9 @@ void blk_eject(BlockBackend *blk, bool eject_flag)
     BlockDriverState *bs = blk_bs(blk);
     char *id;
 
+    /* blk_eject is only called by qdevified devices */
+    assert(!blk->legacy_dev);
+
     if (bs) {
         bdrv_eject(bs, eject_flag);
     }
@@ -1749,7 +1778,7 @@ void blk_eject(BlockBackend *blk, bool eject_flag)
      * the frontend experienced a tray event. */
     id = blk_get_attached_dev_id(blk);
     qapi_event_send_device_tray_moved(blk_name(blk), id,
-                                      eject_flag);
+                                      eject_flag, &error_abort);
     g_free(id);
 }
 
@@ -1762,13 +1791,6 @@ int blk_get_flags(BlockBackend *blk)
     } else {
         return blk->root_state.open_flags;
     }
-}
-
-/* Returns the minimum request alignment, in bytes; guaranteed nonzero */
-uint32_t blk_get_request_alignment(BlockBackend *blk)
-{
-    BlockDriverState *bs = blk_bs(blk);
-    return bs ? bs->bl.request_alignment : BDRV_SECTOR_SIZE;
 }
 
 /* Returns the maximum transfer length, in bytes; guaranteed nonzero */
@@ -1843,7 +1865,13 @@ void blk_op_unblock_all(BlockBackend *blk, Error *reason)
 
 AioContext *blk_get_aio_context(BlockBackend *blk)
 {
-    return bdrv_get_aio_context(blk_bs(blk));
+    BlockDriverState *bs = blk_bs(blk);
+
+    if (bs) {
+        return bdrv_get_aio_context(bs);
+    } else {
+        return qemu_get_aio_context();
+    }
 }
 
 static AioContext *blk_aiocb_get_aio_context(BlockAIOCB *acb)
@@ -1984,7 +2012,6 @@ static void blk_pdiscard_entry(void *opaque)
     QEMUIOVector *qiov = rwco->iobuf;
 
     rwco->ret = blk_co_pdiscard(rwco->blk, rwco->offset, qiov->size);
-    aio_wait_kick();
 }
 
 int blk_pdiscard(BlockBackend *blk, int64_t offset, int bytes)
@@ -2166,13 +2193,6 @@ static void blk_root_drained_begin(BdrvChild *child)
     }
 }
 
-static bool blk_root_drained_poll(BdrvChild *child)
-{
-    BlockBackend *blk = child->opaque;
-    assert(blk->quiesce_counter);
-    return !!blk->in_flight;
-}
-
 static void blk_root_drained_end(BdrvChild *child)
 {
     BlockBackend *blk = child->opaque;
@@ -2196,28 +2216,4 @@ void blk_register_buf(BlockBackend *blk, void *host, size_t size)
 void blk_unregister_buf(BlockBackend *blk, void *host)
 {
     bdrv_unregister_buf(blk_bs(blk), host);
-}
-
-int coroutine_fn blk_co_copy_range(BlockBackend *blk_in, int64_t off_in,
-                                   BlockBackend *blk_out, int64_t off_out,
-                                   int bytes, BdrvRequestFlags read_flags,
-                                   BdrvRequestFlags write_flags)
-{
-    int r;
-    r = blk_check_byte_request(blk_in, off_in, bytes);
-    if (r) {
-        return r;
-    }
-    r = blk_check_byte_request(blk_out, off_out, bytes);
-    if (r) {
-        return r;
-    }
-    return bdrv_co_copy_range(blk_in->root, off_in,
-                              blk_out->root, off_out,
-                              bytes, read_flags, write_flags);
-}
-
-const BdrvChild *blk_root(BlockBackend *blk)
-{
-    return blk->root;
 }

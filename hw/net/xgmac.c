@@ -374,9 +374,9 @@ static NetClientInfo net_xgmac_enet_info = {
     .receive = eth_rx,
 };
 
-static void xgmac_enet_realize(DeviceState *dev, Error **errp)
+static int xgmac_enet_init(SysBusDevice *sbd)
 {
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
+    DeviceState *dev = DEVICE(sbd);
     XgmacState *s = XGMAC(dev);
 
     memory_region_init_io(&s->iomem, OBJECT(s), &enet_mem_ops, s,
@@ -397,6 +397,8 @@ static void xgmac_enet_realize(DeviceState *dev, Error **errp)
                                  (s->conf.macaddr.a[2] << 16) |
                                  (s->conf.macaddr.a[1] << 8) |
                                   s->conf.macaddr.a[0];
+
+    return 0;
 }
 
 static Property xgmac_properties[] = {
@@ -406,9 +408,10 @@ static Property xgmac_properties[] = {
 
 static void xgmac_enet_class_init(ObjectClass *klass, void *data)
 {
+    SysBusDeviceClass *sbc = SYS_BUS_DEVICE_CLASS(klass);
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->realize = xgmac_enet_realize;
+    sbc->init = xgmac_enet_init;
     dc->vmsd = &vmstate_xgmac;
     dc->props = xgmac_properties;
 }

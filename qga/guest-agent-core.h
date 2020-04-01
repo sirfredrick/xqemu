@@ -10,9 +10,6 @@
  * This work is licensed under the terms of the GNU GPL, version 2 or later.
  * See the COPYING file in the top-level directory.
  */
-#ifndef GUEST_AGENT_CORE_H
-#define GUEST_AGENT_CORE_H
-
 #include "qapi/qmp/dispatch.h"
 #include "qemu-common.h"
 #include "qga-qapi-types.h"
@@ -49,5 +46,3 @@ int ga_parse_whence(GuestFileWhence *whence, Error **errp);
 #ifndef _WIN32
 void reopen_fd_to_null(int fd);
 #endif
-
-#endif /* GUEST_AGENT_CORE_H */

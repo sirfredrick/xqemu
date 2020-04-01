@@ -137,7 +137,11 @@ typedef struct DisasContext {
 
 static void gen_BUG(DisasContext *dc, const char *file, int line)
 {
-    cpu_abort(CPU(dc->cpu), "%s:%d pc=%x\n", file, line, dc->pc);
+    fprintf(stderr, "BUG: pc=%x %s %d\n", dc->pc, file, line);
+    if (qemu_log_separate()) {
+        qemu_log("BUG: pc=%x %s %d\n", dc->pc, file, line);
+    }
+    cpu_abort(CPU(dc->cpu), "%s:%d\n", file, line);
 }
 
 static const char *regnames_v32[] =
@@ -536,10 +540,10 @@ static void gen_goto_tb(DisasContext *dc, int n, target_ulong dest)
     if (use_goto_tb(dc, dest)) {
         tcg_gen_goto_tb(n);
         tcg_gen_movi_tl(env_pc, dest);
-        tcg_gen_exit_tb(dc->tb, n);
+                tcg_gen_exit_tb((uintptr_t)dc->tb + n);
     } else {
         tcg_gen_movi_tl(env_pc, dest);
-        tcg_gen_exit_tb(NULL, 0);
+        tcg_gen_exit_tb(0);
     }
 }
 
@@ -3043,7 +3047,7 @@ static unsigned int crisv32_decoder(CPUCRISState *env, DisasContext *dc)
     return insn_len;
 }
 
-#include "translate_v10.inc.c"
+#include "translate_v10.c"
 
 /*
  * Delay slots on QEMU/CRIS.
@@ -3087,7 +3091,7 @@ void gen_intermediate_code(CPUState *cs, struct TranslationBlock *tb)
     unsigned int insn_len;
     struct DisasContext ctx;
     struct DisasContext *dc = &ctx;
-    uint32_t page_start;
+    uint32_t next_page_start;
     target_ulong npc;
     int num_insns;
     int max_insns;
@@ -3134,7 +3138,7 @@ void gen_intermediate_code(CPUState *cs, struct TranslationBlock *tb)
 
     dc->cpustate_changed = 0;
 
-    page_start = pc_start & TARGET_PAGE_MASK;
+    next_page_start = (pc_start & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
     num_insns = 0;
     max_insns = tb_cflags(tb) & CF_COUNT_MASK;
     if (max_insns == 0) {
@@ -3230,7 +3234,7 @@ void gen_intermediate_code(CPUState *cs, struct TranslationBlock *tb)
     } while (!dc->is_jmp && !dc->cpustate_changed
             && !tcg_op_buf_full()
             && !singlestep
-            && (dc->pc - page_start < TARGET_PAGE_SIZE)
+            && (dc->pc < next_page_start)
             && num_insns < max_insns);
 
     if (dc->clear_locked_irq) {
@@ -3272,7 +3276,7 @@ void gen_intermediate_code(CPUState *cs, struct TranslationBlock *tb)
         case DISAS_UPDATE:
             /* indicate that the hash table must be used
                    to find the next TB */
-            tcg_gen_exit_tb(NULL, 0);
+            tcg_gen_exit_tb(0);
             break;
         case DISAS_SWI:
         case DISAS_TB_JUMP:

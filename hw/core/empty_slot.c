@@ -71,20 +71,21 @@ void empty_slot_init(hwaddr addr, uint64_t slot_size)
     }
 }
 
-static void empty_slot_realize(DeviceState *dev, Error **errp)
+static int empty_slot_init1(SysBusDevice *dev)
 {
     EmptySlot *s = EMPTY_SLOT(dev);
 
     memory_region_init_io(&s->iomem, OBJECT(s), &empty_slot_ops, s,
                           "empty-slot", s->size);
-    sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->iomem);
+    sysbus_init_mmio(dev, &s->iomem);
+    return 0;
 }
 
 static void empty_slot_class_init(ObjectClass *klass, void *data)
 {
-    DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
 
-    dc->realize = empty_slot_realize;
+    k->init = empty_slot_init1;
 }
 
 static const TypeInfo empty_slot_info = {

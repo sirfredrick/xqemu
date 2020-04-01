@@ -26,22 +26,21 @@
 #include "qemu/main-loop.h"
 #include "block/aio-wait.h"
 
-AioWait global_aio_wait;
-
 static void dummy_bh_cb(void *opaque)
 {
     /* The point is to make AIO_WAIT_WHILE()'s aio_poll() return */
 }
 
-void aio_wait_kick(void)
+void aio_wait_kick(AioWait *wait)
 {
     /* The barrier (or an atomic op) is in the caller.  */
-    if (atomic_read(&global_aio_wait.num_waiters)) {
+    if (atomic_read(&wait->num_waiters)) {
         aio_bh_schedule_oneshot(qemu_get_aio_context(), dummy_bh_cb, NULL);
     }
 }
 
 typedef struct {
+    AioWait wait;
     bool done;
     QEMUBHFunc *cb;
     void *opaque;
@@ -55,7 +54,7 @@ static void aio_wait_bh(void *opaque)
     data->cb(data->opaque);
 
     data->done = true;
-    aio_wait_kick();
+    aio_wait_kick(&data->wait);
 }
 
 void aio_wait_bh_oneshot(AioContext *ctx, QEMUBHFunc *cb, void *opaque)
@@ -68,5 +67,5 @@ void aio_wait_bh_oneshot(AioContext *ctx, QEMUBHFunc *cb, void *opaque)
     assert(qemu_get_current_aio_context() == qemu_get_aio_context());
 
     aio_bh_schedule_oneshot(ctx, aio_wait_bh, &data);
-    AIO_WAIT_WHILE(ctx, !data.done);
+    AIO_WAIT_WHILE(&data.wait, ctx, !data.done);
 }

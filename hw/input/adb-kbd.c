@@ -261,21 +261,18 @@ static int adb_kbd_request(ADBDevice *d, uint8_t *obuf,
                 trace_adb_kbd_request_change_addr(d->devaddr);
                 break;
             default:
-                if (!d->disable_direct_reg3_writes) {
-                    d->devaddr = buf[1] & 0xf;
-
-                    /* we support handlers:
-                     * 1: Apple Standard Keyboard
-                     * 2: Apple Extended Keyboard (LShift = RShift)
-                     * 3: Apple Extended Keyboard (LShift != RShift)
-                     */
-                    if (buf[2] == 1 || buf[2] == 2 || buf[2] == 3) {
-                        d->handler = buf[2];
-                    }
-
-                    trace_adb_kbd_request_change_addr_and_handler(d->devaddr,
-                                                                  d->handler);
+                d->devaddr = buf[1] & 0xf;
+                /* we support handlers:
+                 * 1: Apple Standard Keyboard
+                 * 2: Apple Extended Keyboard (LShift = RShift)
+                 * 3: Apple Extended Keyboard (LShift != RShift)
+                 */
+                if (buf[2] == 1 || buf[2] == 2 || buf[2] == 3) {
+                    d->handler = buf[2];
                 }
+
+                trace_adb_kbd_request_change_addr_and_handler(d->devaddr,
+                                                              d->handler);
                 break;
             }
         }
@@ -293,8 +290,8 @@ static int adb_kbd_request(ADBDevice *d, uint8_t *obuf,
             olen = 2;
             break;
         case 3:
-            obuf[0] = d->devaddr;
-            obuf[1] = d->handler;
+            obuf[0] = d->handler;
+            obuf[1] = d->devaddr;
             olen = 2;
             break;
         }

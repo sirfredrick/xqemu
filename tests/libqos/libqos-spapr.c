@@ -4,8 +4,9 @@
 #include "libqos/pci-spapr.h"
 
 static QOSOps qos_ops = {
-    .alloc_init = spapr_alloc_init,
-    .qpci_new = qpci_new_spapr,
+    .init_allocator = spapr_alloc_init_flags,
+    .uninit_allocator = spapr_alloc_uninit,
+    .qpci_init = qpci_init_spapr,
     .qpci_free = qpci_free_spapr,
     .shutdown = qtest_spapr_shutdown,
 };

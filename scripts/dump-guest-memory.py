@@ -12,7 +12,6 @@ Authors:
 This work is licensed under the terms of the GNU GPL, version 2 or later. See
 the COPYING file in the top-level directory.
 """
-from __future__ import print_function
 
 import ctypes
 import struct
@@ -163,7 +162,6 @@ class ELF(object):
         phdr = get_arch_phdr(self.endianness, self.elfclass)
         phdr.p_type = p_type
         phdr.p_paddr = p_paddr
-        phdr.p_vaddr = p_paddr
         phdr.p_filesz = p_size
         phdr.p_memsz = p_size
         self.segments.append(phdr)
@@ -418,9 +416,7 @@ def get_guest_phys_blocks():
         memory_region = flat_range["mr"].dereference()
 
         # we only care about RAM
-        if (not memory_region["ram"] or
-            memory_region["ram_device"] or
-            memory_region["nonvolatile"]):
+        if not memory_region["ram"]:
             continue
 
         section_size = int128_get64(flat_range["addr"]["size"])

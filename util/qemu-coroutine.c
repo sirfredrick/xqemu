@@ -198,8 +198,3 @@ bool qemu_coroutine_entered(Coroutine *co)
 {
     return co->caller;
 }
-
-AioContext *coroutine_fn qemu_coroutine_get_aio_context(Coroutine *co)
-{
-    return co->ctx;
-}

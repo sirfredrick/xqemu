@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # parallels format validation tests (created by QEMU)
 #
@@ -24,6 +24,7 @@ owner=den@openvz.org
 seq=`basename $0`
 echo "QA output created by $seq"
 
+here=`pwd`
 status=1	# failure is the default!
 
 _cleanup()

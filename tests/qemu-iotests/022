@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Test bdrv_load/save_vmstate using the usual patterns
 #
@@ -26,6 +26,7 @@ owner=kwolf@redhat.com
 seq=`basename $0`
 echo "QA output created by $seq"
 
+here=`pwd`
 status=1	# failure is the default!
 
 _cleanup()

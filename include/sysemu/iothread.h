@@ -24,10 +24,11 @@ typedef struct {
 
     QemuThread thread;
     AioContext *ctx;
-    bool run_gcontext;          /* whether we should run gcontext */
     GMainContext *worker_context;
     GMainLoop *main_loop;
-    QemuSemaphore init_done_sem; /* is thread init done? */
+    GOnce once;
+    QemuMutex init_done_lock;
+    QemuCond init_done_cond;    /* is thread initialization done? */
     bool stopping;              /* has iothread_stop() been called? */
     bool running;               /* should iothread_run() continue? */
     int thread_id;

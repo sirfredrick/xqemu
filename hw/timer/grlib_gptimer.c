@@ -347,11 +347,10 @@ static void grlib_gptimer_reset(DeviceState *d)
     }
 }
 
-static void grlib_gptimer_realize(DeviceState *dev, Error **errp)
+static int grlib_gptimer_init(SysBusDevice *dev)
 {
     GPTimerUnit  *unit = GRLIB_GPTIMER(dev);
     unsigned int  i;
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
 
     assert(unit->nr_timers > 0);
     assert(unit->nr_timers <= GPTIMER_MAX_TIMERS);
@@ -367,7 +366,7 @@ static void grlib_gptimer_realize(DeviceState *dev, Error **errp)
         timer->id     = i;
 
         /* One IRQ line for each timer */
-        sysbus_init_irq(sbd, &timer->irq);
+        sysbus_init_irq(dev, &timer->irq);
 
         ptimer_set_freq(timer->ptimer, unit->freq_hz);
     }
@@ -376,7 +375,8 @@ static void grlib_gptimer_realize(DeviceState *dev, Error **errp)
                           unit, "gptimer",
                           UNIT_REG_SIZE + GPTIMER_REG_SIZE * unit->nr_timers);
 
-    sysbus_init_mmio(sbd, &unit->iomem);
+    sysbus_init_mmio(dev, &unit->iomem);
+    return 0;
 }
 
 static Property grlib_gptimer_properties[] = {
@@ -389,8 +389,9 @@ static Property grlib_gptimer_properties[] = {
 static void grlib_gptimer_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
 
-    dc->realize = grlib_gptimer_realize;
+    k->init = grlib_gptimer_init;
     dc->reset = grlib_gptimer_reset;
     dc->props = grlib_gptimer_properties;
 }

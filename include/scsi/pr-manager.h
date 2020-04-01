@@ -5,7 +5,6 @@
 #include "qapi/visitor.h"
 #include "qom/object_interfaces.h"
 #include "block/aio.h"
-#include "qemu/coroutine.h"
 
 #define TYPE_PR_MANAGER "pr-manager"
 
@@ -34,13 +33,23 @@ typedef struct PRManagerClass {
 
     /* <public> */
     int (*run)(PRManager *pr_mgr, int fd, struct sg_io_hdr *hdr);
-    bool (*is_connected)(PRManager *pr_mgr);
 } PRManagerClass;
 
-bool pr_manager_is_connected(PRManager *pr_mgr);
-int coroutine_fn pr_manager_execute(PRManager *pr_mgr, AioContext *ctx, int fd,
-                                    struct sg_io_hdr *hdr);
+BlockAIOCB *pr_manager_execute(PRManager *pr_mgr,
+                               AioContext *ctx, int fd,
+                               struct sg_io_hdr *hdr,
+                               BlockCompletionFunc *complete,
+                               void *opaque);
 
+#ifdef CONFIG_LINUX
 PRManager *pr_manager_lookup(const char *id, Error **errp);
+#else
+static inline PRManager *pr_manager_lookup(const char *id, Error **errp)
+{
+    /* The classes do not exist at all!  */
+    error_setg(errp, "No persistent reservation manager with id '%s'", id);
+    return NULL;
+}
+#endif
 
 #endif

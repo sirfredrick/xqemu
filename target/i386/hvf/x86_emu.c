@@ -128,7 +128,7 @@ void write_reg(CPUX86State *env, int reg, target_ulong val, int size)
     }
 }
 
-target_ulong read_val_from_reg(uintptr_t reg_ptr, int size)
+target_ulong read_val_from_reg(target_ulong reg_ptr, int size)
 {
     target_ulong val;
     
@@ -151,7 +151,7 @@ target_ulong read_val_from_reg(uintptr_t reg_ptr, int size)
     return val;
 }
 
-void write_val_to_reg(uintptr_t reg_ptr, target_ulong val, int size)
+void write_val_to_reg(target_ulong reg_ptr, target_ulong val, int size)
 {
     switch (size) {
     case 1:
@@ -171,12 +171,12 @@ void write_val_to_reg(uintptr_t reg_ptr, target_ulong val, int size)
     }
 }
 
-static bool is_host_reg(struct CPUX86State *env, uintptr_t ptr)
+static bool is_host_reg(struct CPUX86State *env, target_ulong ptr)
 {
-    return (ptr - (uintptr_t)&env->hvf_emul->regs[0]) < sizeof(env->hvf_emul->regs);
+    return (ptr - (target_ulong)&env->hvf_emul->regs[0]) < sizeof(env->hvf_emul->regs);
 }
 
-void write_val_ext(struct CPUX86State *env, uintptr_t ptr, target_ulong val, int size)
+void write_val_ext(struct CPUX86State *env, target_ulong ptr, target_ulong val, int size)
 {
     if (is_host_reg(env, ptr)) {
         write_val_to_reg(ptr, val, size);
@@ -192,7 +192,7 @@ uint8_t *read_mmio(struct CPUX86State *env, target_ulong ptr, int bytes)
 }
 
 
-target_ulong read_val_ext(struct CPUX86State *env, uintptr_t ptr, int size)
+target_ulong read_val_ext(struct CPUX86State *env, target_ulong ptr, int size)
 {
     target_ulong val;
     uint8_t *mmio_ptr;
@@ -698,9 +698,6 @@ void simulate_rdmsr(struct CPUState *cpu)
     case MSR_CSTAR:
         abort();
         break;
-    case MSR_PAT:
-        val = env->pat;
-        break;
     case MSR_IA32_MISC_ENABLE:
         val = env->msr_ia32_misc_enable;
         break;
@@ -745,7 +742,7 @@ void simulate_rdmsr(struct CPUState *cpu)
         val = env->mtrr_deftype;
         break;
     default:
-        fprintf(stderr, "%s: unknown msr 0x%x\n", __func__, msr);
+        /* fprintf(stderr, "%s: unknown msr 0x%x\n", __func__, msr); */
         val = 0;
         break;
     }
@@ -800,9 +797,6 @@ void simulate_wrmsr(struct CPUState *cpu)
         if (data & MSR_EFER_NXE) {
             hv_vcpu_invalidate_tlb(cpu->hvf_fd);
         }
-        break;
-    case MSR_PAT:
-        env->pat = data;
         break;
     case MSR_MTRRphysBase(0):
     case MSR_MTRRphysBase(1):

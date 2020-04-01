@@ -10,45 +10,37 @@
 #ifndef TRACE__MEM_INTERNAL_H
 #define TRACE__MEM_INTERNAL_H
 
-#define TRACE_MEM_SZ_SHIFT_MASK 0x7 /* size shift mask */
-#define TRACE_MEM_SE (1ULL << 3)    /* sign extended (y/n) */
-#define TRACE_MEM_BE (1ULL << 4)    /* big endian (y/n) */
-#define TRACE_MEM_ST (1ULL << 5)    /* store (y/n) */
-
-static inline uint8_t trace_mem_build_info(
-    int size_shift, bool sign_extend, TCGMemOp endianness, bool store)
+static inline uint8_t trace_mem_get_info(TCGMemOp op, bool store)
 {
-    uint8_t res;
+    uint8_t res = op;
+    bool be = (op & MO_BSWAP) == MO_BE;
 
-    res = size_shift & TRACE_MEM_SZ_SHIFT_MASK;
-    if (sign_extend) {
-        res |= TRACE_MEM_SE;
+    /* remove untraced fields */
+    res &= (1ULL << 4) - 1;
+    /* make endianness absolute */
+    res &= ~MO_BSWAP;
+    if (be) {
+        res |= 1ULL << 3;
     }
-    if (endianness == MO_BE) {
-        res |= TRACE_MEM_BE;
-    }
+    /* add fields */
     if (store) {
-        res |= TRACE_MEM_ST;
+        res |= 1ULL << 4;
     }
+
     return res;
 }
 
-static inline uint8_t trace_mem_get_info(TCGMemOp op, bool store)
+static inline uint8_t trace_mem_build_info(
+    TCGMemOp size, bool sign_extend, TCGMemOp endianness, bool store)
 {
-    return trace_mem_build_info(op & MO_SIZE, !!(op & MO_SIGN),
-                                op & MO_BSWAP, store);
-}
-
-static inline
-uint8_t trace_mem_build_info_no_se_be(int size_shift, bool store)
-{
-    return trace_mem_build_info(size_shift, false, MO_BE, store);
-}
-
-static inline
-uint8_t trace_mem_build_info_no_se_le(int size_shift, bool store)
-{
-    return trace_mem_build_info(size_shift, false, MO_LE, store);
+    uint8_t res = 0;
+    res |= size;
+    res |= (sign_extend << 2);
+    if (endianness == MO_BE) {
+        res |= (1ULL << 3);
+    }
+    res |= (store << 4);
+    return res;
 }
 
 #endif /* TRACE__MEM_INTERNAL_H */

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Test command line configuration of block devices with qdev
 #
@@ -24,6 +24,7 @@ owner=kwolf@redhat.com
 seq="$(basename $0)"
 echo "QA output created by $seq"
 
+here="$PWD"
 status=1	# failure is the default!
 
 _cleanup()
@@ -40,7 +41,7 @@ _supported_fmt generic
 _supported_proto file
 _supported_os Linux
 
-do_run_qemu()
+function do_run_qemu()
 {
     (
         if ! test -t 0; then
@@ -53,7 +54,7 @@ do_run_qemu()
     echo
 }
 
-run_qemu()
+function run_qemu()
 {
     do_run_qemu "$@" 2>&1 | _filter_testdir | _filter_imgfmt \
                           | _filter_qemu | _filter_generated_node_ids

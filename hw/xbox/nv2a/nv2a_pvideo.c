@@ -5,18 +5,18 @@
  * Copyright (c) 2015 Jannik Vogel
  * Copyright (c) 2018 Matt Borgerson
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 or
+ * (at your option) version 3 of the License.
  *
- * This library is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 static void pvideo_vga_invalidate(NV2AState *d)
@@ -29,7 +29,8 @@ static void pvideo_vga_invalidate(NV2AState *d)
     vga_invalidate_scanlines(&d->vga, y1, y2);
 }
 
-uint64_t pvideo_read(void *opaque, hwaddr addr, unsigned int size)
+uint64_t pvideo_read(void *opaque,
+                            hwaddr addr, unsigned int size)
 {
     NV2AState *d = opaque;
 
@@ -47,7 +48,8 @@ uint64_t pvideo_read(void *opaque, hwaddr addr, unsigned int size)
     return r;
 }
 
-void pvideo_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
+void pvideo_write(void *opaque, hwaddr addr,
+                         uint64_t val, unsigned int size)
 {
     NV2AState *d = opaque;
 

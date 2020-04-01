@@ -278,18 +278,18 @@ static void char_mux_finalize(Object *obj)
     qemu_chr_fe_deinit(&d->chr, false);
 }
 
-static void mux_chr_update_read_handlers(Chardev *chr)
+void mux_chr_set_handlers(Chardev *chr, GMainContext *context)
 {
     MuxChardev *d = MUX_CHARDEV(chr);
 
     /* Fix up the real driver with mux routines */
-    qemu_chr_fe_set_handlers_full(&d->chr,
-                                  mux_chr_can_read,
-                                  mux_chr_read,
-                                  mux_chr_event,
-                                  NULL,
-                                  chr,
-                                  chr->gcontext, true, false);
+    qemu_chr_fe_set_handlers(&d->chr,
+                             mux_chr_can_read,
+                             mux_chr_read,
+                             mux_chr_event,
+                             NULL,
+                             chr,
+                             context, true);
 }
 
 void mux_set_focus(Chardev *chr, int focus)
@@ -304,7 +304,6 @@ void mux_set_focus(Chardev *chr, int focus)
     }
 
     d->focus = focus;
-    chr->be = d->backends[focus];
     mux_chr_send_event(d, d->focus, CHR_EVENT_MUX_IN);
 }
 
@@ -367,7 +366,7 @@ static int open_muxes(Chardev *chr)
      * mark mux as OPENED so any new FEs will immediately receive
      * OPENED event
      */
-    chr->be_open = 1;
+    qemu_chr_be_event(chr, CHR_EVENT_OPENED);
 
     return 0;
 }
@@ -383,7 +382,6 @@ static void char_mux_class_init(ObjectClass *oc, void *data)
     cc->chr_add_watch = mux_chr_add_watch;
     cc->chr_be_event = mux_chr_be_event;
     cc->chr_machine_done = open_muxes;
-    cc->chr_update_read_handler = mux_chr_update_read_handlers;
 }
 
 static const TypeInfo char_mux_type_info = {

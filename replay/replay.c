@@ -214,32 +214,13 @@ bool replay_checkpoint(ReplayCheckpoint checkpoint)
         /* This checkpoint belongs to several threads.
            Processing events from different threads is
            non-deterministic */
-        if (checkpoint != CHECKPOINT_CLOCK_WARP_START
-            /* FIXME: this is temporary fix, other checkpoints
-                      may also be invoked from the different threads someday.
-                      Asynchronous event processing should be refactored
-                      to create additional replay event kind which is
-                      nailed to the one of the threads and which processes
-                      the event queue. */
-            && checkpoint != CHECKPOINT_CLOCK_VIRTUAL) {
+        if (checkpoint != CHECKPOINT_CLOCK_WARP_START) {
             replay_save_events(checkpoint);
         }
         res = true;
     }
 out:
     in_checkpoint = false;
-    return res;
-}
-
-bool replay_has_checkpoint(void)
-{
-    bool res = false;
-    if (replay_mode == REPLAY_MODE_PLAY) {
-        g_assert(replay_mutex_locked());
-        replay_account_executed_instructions();
-        res = EVENT_CHECKPOINT <= replay_state.data_kind
-              && replay_state.data_kind <= EVENT_CHECKPOINT_LAST;
-    }
     return res;
 }
 

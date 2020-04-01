@@ -7,7 +7,7 @@
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
- * version 2.1 of the License, or (at your option) any later version.
+ * version 2 of the License, or (at your option) any later version.
  *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -23,6 +23,7 @@
 #include "internal.h"
 #include "exec/gdbstub.h"
 #include "qemu/timer.h"
+#include "exec/exec-all.h"
 #include "hw/s390x/ioinst.h"
 #include "sysemu/hw_accel.h"
 #ifndef CONFIG_USER_ONLY
@@ -211,7 +212,7 @@ void s390_cpu_recompute_watchpoints(CPUState *cs)
     }
 }
 
-typedef struct SigpSaveArea {
+struct sigp_save_area {
     uint64_t    fprs[16];                       /* 0x0000 */
     uint64_t    grs[16];                        /* 0x0080 */
     PSW         psw;                            /* 0x0100 */
@@ -225,13 +226,13 @@ typedef struct SigpSaveArea {
     uint8_t     pad_0x0138[0x0140 - 0x0138];    /* 0x0138 */
     uint32_t    ars[16];                        /* 0x0140 */
     uint64_t    crs[16];                        /* 0x0384 */
-} SigpSaveArea;
-QEMU_BUILD_BUG_ON(sizeof(SigpSaveArea) != 512);
+};
+QEMU_BUILD_BUG_ON(sizeof(struct sigp_save_area) != 512);
 
 int s390_store_status(S390CPU *cpu, hwaddr addr, bool store_arch)
 {
     static const uint8_t ar_id = 1;
-    SigpSaveArea *sa;
+    struct sigp_save_area *sa;
     hwaddr len = sizeof(*sa);
     int i;
 
@@ -272,43 +273,32 @@ int s390_store_status(S390CPU *cpu, hwaddr addr, bool store_arch)
     return 0;
 }
 
-typedef struct SigpAdtlSaveArea {
-    uint64_t    vregs[32][2];                     /* 0x0000 */
-    uint8_t     pad_0x0200[0x0400 - 0x0200];      /* 0x0200 */
-    uint64_t    gscb[4];                          /* 0x0400 */
-    uint8_t     pad_0x0420[0x1000 - 0x0420];      /* 0x0420 */
-} SigpAdtlSaveArea;
-QEMU_BUILD_BUG_ON(sizeof(SigpAdtlSaveArea) != 4096);
-
+#define ADTL_GS_OFFSET   1024 /* offset of GS data in adtl save area */
 #define ADTL_GS_MIN_SIZE 2048 /* minimal size of adtl save area for GS */
 int s390_store_adtl_status(S390CPU *cpu, hwaddr addr, hwaddr len)
 {
-    SigpAdtlSaveArea *sa;
     hwaddr save = len;
-    int i;
+    void *mem;
 
-    sa = cpu_physical_memory_map(addr, &save, 1);
-    if (!sa) {
+    mem = cpu_physical_memory_map(addr, &save, 1);
+    if (!mem) {
         return -EFAULT;
     }
     if (save != len) {
-        cpu_physical_memory_unmap(sa, len, 1, 0);
+        cpu_physical_memory_unmap(mem, len, 1, 0);
         return -EFAULT;
     }
 
+    /* FIXME: as soon as TCG supports these features, convert cpu->be */
     if (s390_has_feat(S390_FEAT_VECTOR)) {
-        for (i = 0; i < 32; i++) {
-            sa->vregs[i][0] = cpu_to_be64(cpu->env.vregs[i][0].ll);
-            sa->vregs[i][1] = cpu_to_be64(cpu->env.vregs[i][1].ll);
-        }
+        memcpy(mem, &cpu->env.vregs, 512);
     }
     if (s390_has_feat(S390_FEAT_GUARDED_STORAGE) && len >= ADTL_GS_MIN_SIZE) {
-        for (i = 0; i < 4; i++) {
-            sa->gscb[i] = cpu_to_be64(cpu->env.gscb[i]);
-        }
+        memcpy(mem + ADTL_GS_OFFSET, &cpu->env.gscb, 32);
     }
 
-    cpu_physical_memory_unmap(sa, len, 1, len);
+    cpu_physical_memory_unmap(mem, len, 1, len);
+
     return 0;
 }
 #endif /* CONFIG_USER_ONLY */
@@ -337,20 +327,19 @@ void s390_cpu_dump_state(CPUState *cs, FILE *f, fprintf_function cpu_fprintf,
         }
     }
 
-    if (flags & CPU_DUMP_FPU) {
-        if (s390_has_feat(S390_FEAT_VECTOR)) {
-            for (i = 0; i < 32; i++) {
-                cpu_fprintf(f, "V%02d=%016" PRIx64 "%016" PRIx64 "%c",
-                            i, env->vregs[i][0].ll, env->vregs[i][1].ll,
-                            i % 2 ? '\n' : ' ');
-            }
+    for (i = 0; i < 16; i++) {
+        cpu_fprintf(f, "F%02d=%016" PRIx64, i, get_freg(env, i)->ll);
+        if ((i % 4) == 3) {
+            cpu_fprintf(f, "\n");
         } else {
-            for (i = 0; i < 16; i++) {
-                cpu_fprintf(f, "F%02d=%016" PRIx64 "%c",
-                            i, get_freg(env, i)->ll,
-                            (i % 4) == 3 ? '\n' : ' ');
-            }
+            cpu_fprintf(f, " ");
         }
+    }
+
+    for (i = 0; i < 32; i++) {
+        cpu_fprintf(f, "V%02d=%016" PRIx64 "%016" PRIx64, i,
+                    env->vregs[i][0].ll, env->vregs[i][1].ll);
+        cpu_fprintf(f, (i % 2) ? "\n" : " ");
     }
 
 #ifndef CONFIG_USER_ONLY
@@ -417,7 +406,6 @@ const char *cc_name(enum cc_op cc_op)
         [CC_OP_SLA_32]    = "CC_OP_SLA_32",
         [CC_OP_SLA_64]    = "CC_OP_SLA_64",
         [CC_OP_FLOGR]     = "CC_OP_FLOGR",
-        [CC_OP_LCBB]      = "CC_OP_LCBB",
     };
 
     return cc_names[cc_op];

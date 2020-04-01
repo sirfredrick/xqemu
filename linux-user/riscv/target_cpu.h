@@ -15,8 +15,4 @@ static inline void cpu_set_tls(CPURISCVState *env, target_ulong newtls)
     env->gpr[xTP] = newtls;
 }
 
-static inline abi_ulong get_sp_from_cpustate(CPURISCVState *state)
-{
-   return state->gpr[xSP];
-}
 #endif

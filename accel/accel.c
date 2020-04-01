@@ -34,7 +34,6 @@
 #include "qom/object.h"
 #include "qemu/error-report.h"
 #include "qemu/option.h"
-#include "qapi/error.h"
 
 static const TypeInfo accel_type = {
     .name = TYPE_ACCEL,
@@ -65,16 +64,14 @@ static int accel_init_machine(AccelClass *acc, MachineState *ms)
         ms->accelerator = NULL;
         *(acc->allowed) = false;
         object_unref(OBJECT(accel));
-    } else {
-        object_set_accelerator_compat_props(acc->compat_props);
     }
     return ret;
 }
 
-void configure_accelerator(MachineState *ms, const char *progname)
+void configure_accelerator(MachineState *ms)
 {
-    const char *accel;
-    char **accel_list, **tmp;
+    const char *accel, *p;
+    char buf[10];
     int ret;
     bool accel_initialised = false;
     bool init_failed = false;
@@ -82,28 +79,17 @@ void configure_accelerator(MachineState *ms, const char *progname)
 
     accel = qemu_opt_get(qemu_get_machine_opts(), "accel");
     if (accel == NULL) {
-        /* Select the default accelerator */
-        int pnlen = strlen(progname);
-        if (pnlen >= 3 && g_str_equal(&progname[pnlen - 3], "kvm")) {
-            /* If the program name ends with "kvm", we prefer KVM */
-            accel = "kvm:tcg";
-        } else {
-#if defined(CONFIG_TCG)
-            accel = "tcg";
-#elif defined(CONFIG_KVM)
-            accel = "kvm";
-#else
-            error_report("No accelerator selected and"
-                         " no default accelerator available");
-            exit(1);
-#endif
-        }
+        /* Use the default "accelerator", tcg */
+        accel = "tcg";
     }
 
-    accel_list = g_strsplit(accel, ":", 0);
-
-    for (tmp = accel_list; !accel_initialised && tmp && *tmp; tmp++) {
-        acc = accel_find(*tmp);
+    p = accel;
+    while (!accel_initialised && *p != '\0') {
+        if (*p == ':') {
+            p++;
+        }
+        p = get_opt_name(buf, sizeof(buf), p, ':');
+        acc = accel_find(buf);
         if (!acc) {
             continue;
         }
@@ -121,7 +107,6 @@ void configure_accelerator(MachineState *ms, const char *progname)
             accel_initialised = true;
         }
     }
-    g_strfreev(accel_list);
 
     if (!accel_initialised) {
         if (!init_failed) {
@@ -135,13 +120,10 @@ void configure_accelerator(MachineState *ms, const char *progname)
     }
 }
 
-void accel_setup_post(MachineState *ms)
+void accel_register_compat_props(AccelState *accel)
 {
-    AccelState *accel = ms->accelerator;
-    AccelClass *acc = ACCEL_GET_CLASS(accel);
-    if (acc->setup_post) {
-        acc->setup_post(ms, accel);
-    }
+    AccelClass *class = ACCEL_GET_CLASS(accel);
+    register_compat_props_array(class->global_props);
 }
 
 static void register_accel_types(void)

@@ -52,7 +52,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/cutils.h"
 
 #include "qemu/uri.h"
 
@@ -1066,7 +1065,10 @@ URI *uri_parse_raw(const char *str, int raw)
  */
 URI *uri_new(void)
 {
-    return g_new0(URI, 1);
+    URI *ret;
+
+    ret = g_new0(URI, 1);
+    return ret;
 }
 
 /**
@@ -2267,7 +2269,10 @@ struct QueryParams *query_params_parse(const char *query)
         /* Find the next separator, or end of the string. */
         end = strchr(query, '&');
         if (!end) {
-            end = qemu_strchrnul(query, ';');
+            end = strchr(query, ';');
+        }
+        if (!end) {
+            end = query + strlen(query);
         }
 
         /* Find the first '=' character between here and end. */

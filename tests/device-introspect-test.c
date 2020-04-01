@@ -40,8 +40,8 @@ static QList *qom_list_types(const char *implements, bool abstract)
                " 'arguments': %p }", args);
     g_assert(qdict_haskey(resp, "return"));
     ret = qdict_get_qlist(resp, "return");
-    qobject_ref(ret);
-    qobject_unref(resp);
+    QINCREF(ret);
+    QDECREF(resp);
     return ret;
 }
 
@@ -54,7 +54,7 @@ static QDict *qom_type_index(QList *types)
     QLIST_FOREACH_ENTRY(types, e) {
         QDict *d = qobject_to(QDict, qlist_entry_obj(e));
         const char *name = qdict_get_str(d, "name");
-        qobject_ref(d);
+        QINCREF(d);
         qdict_put(index, name, d);
     }
     return index;
@@ -103,37 +103,22 @@ static QList *device_type_list(bool abstract)
 static void test_one_device(const char *type)
 {
     QDict *resp;
-    char *help;
-    char *qom_tree_start, *qom_tree_end;
-    char *qtree_start, *qtree_end;
-
-    g_test_message("Testing device '%s'", type);
-
-    qom_tree_start = hmp("info qom-tree");
-    qtree_start = hmp("info qtree");
+    char *help, *qom_tree;
 
     resp = qmp("{'execute': 'device-list-properties',"
                " 'arguments': {'typename': %s}}",
                type);
-    qobject_unref(resp);
+    QDECREF(resp);
 
     help = hmp("device_add \"%s,help\"", type);
     g_free(help);
 
     /*
      * Some devices leave dangling pointers in QOM behind.
-     * "info qom-tree" or "info qtree" have a good chance at crashing then.
-     * Also make sure that the tree did not change.
+     * "info qom-tree" has a good chance at crashing then
      */
-    qom_tree_end = hmp("info qom-tree");
-    g_assert_cmpstr(qom_tree_start, ==, qom_tree_end);
-    g_free(qom_tree_start);
-    g_free(qom_tree_end);
-
-    qtree_end = hmp("info qtree");
-    g_assert_cmpstr(qtree_start, ==, qtree_end);
-    g_free(qtree_start);
-    g_free(qtree_end);
+    qom_tree = hmp("info qom-tree");
+    g_free(qom_tree);
 }
 
 static void test_device_intro_list(void)
@@ -144,7 +129,7 @@ static void test_device_intro_list(void)
     qtest_start(common_args);
 
     types = device_type_list(true);
-    qobject_unref(types);
+    QDECREF(types);
 
     help = hmp("device_add help");
     g_free(help);
@@ -172,8 +157,8 @@ static void test_qom_list_parents(const char *parent)
         g_assert(qom_has_parent(index, name, parent));
     }
 
-    qobject_unref(types);
-    qobject_unref(index);
+    QDECREF(types);
+    QDECREF(index);
 }
 
 static void test_qom_list_fields(void)
@@ -202,8 +187,8 @@ static void test_qom_list_fields(void)
     test_qom_list_parents("device");
     test_qom_list_parents("sys-bus-device");
 
-    qobject_unref(all_types);
-    qobject_unref(non_abstract);
+    QDECREF(all_types);
+    QDECREF(non_abstract);
     qtest_end();
 }
 
@@ -221,13 +206,13 @@ static void test_device_intro_abstract(void)
     qtest_end();
 }
 
-static void test_device_intro_concrete(const void *args)
+static void test_device_intro_concrete(void)
 {
     QList *types;
     QListEntry *entry;
     const char *type;
 
-    qtest_start(args);
+    qtest_start(common_args);
     types = device_type_list(false);
 
     QLIST_FOREACH_ENTRY(types, entry) {
@@ -237,9 +222,8 @@ static void test_device_intro_concrete(const void *args)
         test_one_device(type);
     }
 
-    qobject_unref(types);
+    QDECREF(types);
     qtest_end();
-    g_free((void *)args);
 }
 
 static void test_abstract_interfaces(void)
@@ -271,29 +255,9 @@ static void test_abstract_interfaces(void)
         g_assert(qdict_haskey(d, "abstract") && qdict_get_bool(d, "abstract"));
     }
 
-    qobject_unref(all_types);
-    qobject_unref(index);
+    QDECREF(all_types);
+    QDECREF(index);
     qtest_end();
-}
-
-static void add_machine_test_case(const char *mname)
-{
-    char *path, *args;
-
-    /* Ignore blacklisted machines */
-    if (g_str_equal("xenfv", mname) || g_str_equal("xenpv", mname)) {
-        return;
-    }
-
-    path = g_strdup_printf("device/introspect/concrete/defaults/%s", mname);
-    args = g_strdup_printf("-M %s", mname);
-    qtest_add_data_func(path, args, test_device_intro_concrete);
-    g_free(path);
-
-    path = g_strdup_printf("device/introspect/concrete/nodefaults/%s", mname);
-    args = g_strdup_printf("-nodefaults -M %s", mname);
-    qtest_add_data_func(path, args, test_device_intro_concrete);
-    g_free(path);
 }
 
 int main(int argc, char **argv)
@@ -304,13 +268,8 @@ int main(int argc, char **argv)
     qtest_add_func("device/introspect/list-fields", test_qom_list_fields);
     qtest_add_func("device/introspect/none", test_device_intro_none);
     qtest_add_func("device/introspect/abstract", test_device_intro_abstract);
+    qtest_add_func("device/introspect/concrete", test_device_intro_concrete);
     qtest_add_func("device/introspect/abstract-interfaces", test_abstract_interfaces);
-    if (g_test_quick()) {
-        qtest_add_data_func("device/introspect/concrete/defaults/none",
-                            g_strdup(common_args), test_device_intro_concrete);
-    } else {
-        qtest_cb_for_every_machine(add_machine_test_case, true);
-    }
 
     return g_test_run();
 }

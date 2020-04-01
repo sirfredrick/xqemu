@@ -18,8 +18,10 @@
 #include "hw/arm/fsl-imx7.h"
 #include "hw/boards.h"
 #include "sysemu/sysemu.h"
+#include "sysemu/device_tree.h"
 #include "qemu/error-report.h"
 #include "sysemu/qtest.h"
+#include "net/net.h"
 
 typedef struct {
     FslIMX7State soc;

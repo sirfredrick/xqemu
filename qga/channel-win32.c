@@ -1,8 +1,8 @@
 #include "qemu/osdep.h"
 #include <windows.h>
 #include <io.h>
-#include "guest-agent-core.h"
-#include "channel.h"
+#include "qga/guest-agent-core.h"
+#include "qga/channel.h"
 
 typedef struct GAChannelReadState {
     guint thread_id;
@@ -302,8 +302,7 @@ static gboolean ga_channel_open(GAChannel *c, GAChannelMethod method,
                            OPEN_EXISTING,
                            FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED, NULL);
     if (c->handle == INVALID_HANDLE_VALUE) {
-        g_critical("error opening path %s: %s", newpath,
-                   g_win32_error_message(GetLastError()));
+        g_critical("error opening path %s", newpath);
         return false;
     }
 

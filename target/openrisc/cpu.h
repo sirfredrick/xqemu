@@ -222,8 +222,12 @@ enum {
 
 /* TLB size */
 enum {
-    TLB_SIZE = 128,
-    TLB_MASK = TLB_SIZE - 1,
+    DTLB_WAYS = 1,
+    DTLB_SIZE = 64,
+    DTLB_MASK = (DTLB_SIZE-1),
+    ITLB_WAYS = 1,
+    ITLB_SIZE = 64,
+    ITLB_MASK = (ITLB_SIZE-1),
 };
 
 /* TLB prot */
@@ -237,6 +241,14 @@ enum {
     UXE = (1 << 7),
 };
 
+/* check if tlb available */
+enum {
+    TLBRET_INVALID = -3,
+    TLBRET_NOMATCH = -2,
+    TLBRET_BADADDR = -1,
+    TLBRET_MATCH = 0
+};
+
 typedef struct OpenRISCTLBEntry {
     uint32_t mr;
     uint32_t tr;
@@ -244,8 +256,8 @@ typedef struct OpenRISCTLBEntry {
 
 #ifndef CONFIG_USER_ONLY
 typedef struct CPUOpenRISCTLBContext {
-    OpenRISCTLBEntry itlb[TLB_SIZE];
-    OpenRISCTLBEntry dtlb[TLB_SIZE];
+    OpenRISCTLBEntry itlb[ITLB_WAYS][ITLB_SIZE];
+    OpenRISCTLBEntry dtlb[DTLB_WAYS][DTLB_SIZE];
 
     int (*cpu_openrisc_map_address_code)(struct OpenRISCCPU *cpu,
                                          hwaddr *physical,
@@ -289,10 +301,6 @@ typedef struct CPUOpenRISCState {
 
     uint32_t dflag;           /* In delay slot (boolean) */
 
-#ifndef CONFIG_USER_ONLY
-    CPUOpenRISCTLBContext tlb;
-#endif
-
     /* Fields up to this point are cleared by a CPU reset */
     struct {} end_reset_fields;
 
@@ -302,6 +310,8 @@ typedef struct CPUOpenRISCState {
     uint32_t cpucfgr;         /* CPU configure register */
 
 #ifndef CONFIG_USER_ONLY
+    CPUOpenRISCTLBContext * tlb;
+
     QEMUTimer *timer;
     uint32_t ttmr;          /* Timer tick mode register */
     int is_counting;
@@ -348,7 +358,6 @@ void openrisc_translate_init(void);
 int openrisc_cpu_handle_mmu_fault(CPUState *cpu, vaddr address, int size,
                                   int rw, int mmu_idx);
 int cpu_openrisc_signal_handler(int host_signum, void *pinfo, void *puc);
-int print_insn_or1k(bfd_vma addr, disassemble_info *info);
 
 #define cpu_list cpu_openrisc_list
 #define cpu_signal_handler cpu_openrisc_signal_handler
@@ -367,6 +376,17 @@ void cpu_openrisc_count_update(OpenRISCCPU *cpu);
 void cpu_openrisc_timer_update(OpenRISCCPU *cpu);
 void cpu_openrisc_count_start(OpenRISCCPU *cpu);
 void cpu_openrisc_count_stop(OpenRISCCPU *cpu);
+
+void cpu_openrisc_mmu_init(OpenRISCCPU *cpu);
+int cpu_openrisc_get_phys_nommu(OpenRISCCPU *cpu,
+                                hwaddr *physical,
+                                int *prot, target_ulong address, int rw);
+int cpu_openrisc_get_phys_code(OpenRISCCPU *cpu,
+                               hwaddr *physical,
+                               int *prot, target_ulong address, int rw);
+int cpu_openrisc_get_phys_data(OpenRISCCPU *cpu,
+                               hwaddr *physical,
+                               int *prot, target_ulong address, int rw);
 #endif
 
 #define OPENRISC_CPU_TYPE_SUFFIX "-" TYPE_OPENRISC_CPU
@@ -375,12 +395,9 @@ void cpu_openrisc_count_stop(OpenRISCCPU *cpu);
 
 #include "exec/cpu-all.h"
 
-#define TB_FLAGS_SM    SR_SM
-#define TB_FLAGS_DME   SR_DME
-#define TB_FLAGS_IME   SR_IME
+#define TB_FLAGS_DFLAG 1
+#define TB_FLAGS_R0_0  2
 #define TB_FLAGS_OVE   SR_OVE
-#define TB_FLAGS_DFLAG 2      /* reuse SR_TEE */
-#define TB_FLAGS_R0_0  4      /* reuse SR_IEE */
 
 static inline uint32_t cpu_get_gpr(const CPUOpenRISCState *env, int i)
 {
@@ -398,21 +415,17 @@ static inline void cpu_get_tb_cpu_state(CPUOpenRISCState *env,
 {
     *pc = env->pc;
     *cs_base = 0;
-    *flags = (env->dflag ? TB_FLAGS_DFLAG : 0)
-           | (cpu_get_gpr(env, 0) ? 0 : TB_FLAGS_R0_0)
-           | (env->sr & (SR_SM | SR_DME | SR_IME | SR_OVE));
+    *flags = (env->dflag
+              | (cpu_get_gpr(env, 0) == 0 ? TB_FLAGS_R0_0 : 0)
+              | (env->sr & SR_OVE));
 }
 
 static inline int cpu_mmu_index(CPUOpenRISCState *env, bool ifetch)
 {
-    int ret = MMU_NOMMU_IDX;  /* mmu is disabled */
-
-    if (env->sr & (ifetch ? SR_IME : SR_DME)) {
-        /* The mmu is enabled; test supervisor state.  */
-        ret = env->sr & SR_SM ? MMU_SUPERVISOR_IDX : MMU_USER_IDX;
+    if (!(env->sr & SR_IME)) {
+        return MMU_NOMMU_IDX;
     }
-
-    return ret;
+    return (env->sr & SR_SM) == 0 ? MMU_USER_IDX : MMU_SUPERVISOR_IDX;
 }
 
 static inline uint32_t cpu_get_sr(const CPUOpenRISCState *env)

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Test COW from backing files
 #
@@ -24,6 +24,7 @@ owner=kwolf@redhat.com
 seq=`basename $0`
 echo "QA output created by $seq"
 
+here=`pwd`
 status=1	# failure is the default!
 
 _cleanup()
@@ -54,7 +55,7 @@ TEST_IMG="$TEST_IMG.base"
 
 _make_test_img $size
 
-backing_io()
+function backing_io()
 {
     local offset=$1
     local sectors=$2

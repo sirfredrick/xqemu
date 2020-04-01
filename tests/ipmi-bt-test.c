@@ -400,14 +400,21 @@ static void open_socket(void)
 
 int main(int argc, char **argv)
 {
+    const char *arch = qtest_get_arch();
     int ret;
+
+    /* Check architecture */
+    if (strcmp(arch, "i386") && strcmp(arch, "x86_64")) {
+        g_test_message("Skipping test for non-x86\n");
+        return 0;
+    }
 
     open_socket();
 
     /* Run the tests */
     g_test_init(&argc, &argv, NULL);
 
-    global_qtest = qtest_initf(
+    global_qtest = qtest_startf(
         " -chardev socket,id=ipmi0,host=localhost,port=%d,reconnect=10"
         " -device ipmi-bmc-extern,chardev=ipmi0,id=bmc0"
         " -device isa-ipmi-bt,bmc=bmc0", emu_port);

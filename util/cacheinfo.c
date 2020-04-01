@@ -7,13 +7,9 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/host-utils.h"
-#include "qemu/atomic.h"
 
 int qemu_icache_linesize = 0;
-int qemu_icache_linesize_log;
 int qemu_dcache_linesize = 0;
-int qemu_dcache_linesize_log;
 
 /*
  * Operating system specific detection mechanisms.
@@ -176,13 +172,6 @@ static void __attribute__((constructor)) init_cache_info(void)
     arch_cache_info(&isize, &dsize);
     fallback_cache_info(&isize, &dsize);
 
-    assert((isize & (isize - 1)) == 0);
-    assert((dsize & (dsize - 1)) == 0);
-
     qemu_icache_linesize = isize;
-    qemu_icache_linesize_log = ctz32(isize);
     qemu_dcache_linesize = dsize;
-    qemu_dcache_linesize_log = ctz32(dsize);
-
-    atomic64_init();
 }

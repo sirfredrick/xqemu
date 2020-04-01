@@ -68,13 +68,18 @@ static void xtensa_set_irq(void *opaque, int irq, int active)
         uint32_t irq_bit = 1 << irq;
 
         if (active) {
-            atomic_or(&env->sregs[INTSET], irq_bit);
+            env->sregs[INTSET] |= irq_bit;
         } else if (env->config->interrupt[irq].inttype == INTTYPE_LEVEL) {
-            atomic_and(&env->sregs[INTSET], ~irq_bit);
+            env->sregs[INTSET] &= ~irq_bit;
         }
 
         check_interrupts(env);
     }
+}
+
+void xtensa_timer_irq(CPUXtensaState *env, uint32_t id, uint32_t active)
+{
+    qemu_set_irq(env->irq_inputs[env->config->timerint[id]], active);
 }
 
 static void xtensa_ccompare_cb(void *opaque)
@@ -83,22 +88,16 @@ static void xtensa_ccompare_cb(void *opaque)
     CPUXtensaState *env = ccompare->env;
     unsigned i = ccompare - env->ccompare;
 
-    qemu_set_irq(env->irq_inputs[env->config->timerint[i]], 1);
-}
-
-static void xtensa_set_runstall(void *opaque, int irq, int active)
-{
-    CPUXtensaState *env = opaque;
-    xtensa_runstall(env, active);
+    xtensa_timer_irq(env, i, 1);
 }
 
 void xtensa_irq_init(CPUXtensaState *env)
 {
-    unsigned i;
-
-    env->irq_inputs = qemu_allocate_irqs(xtensa_set_irq, env,
-                                         env->config->ninterrupt);
+    env->irq_inputs = (void **)qemu_allocate_irqs(
+            xtensa_set_irq, env, env->config->ninterrupt);
     if (xtensa_option_enabled(env->config, XTENSA_OPTION_TIMER_INTERRUPT)) {
+        unsigned i;
+
         env->time_base = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
         env->ccount_base = env->sregs[CCOUNT];
         for (i = 0; i < env->config->nccompare; ++i) {
@@ -107,20 +106,16 @@ void xtensa_irq_init(CPUXtensaState *env)
                     xtensa_ccompare_cb, env->ccompare + i);
         }
     }
-    for (i = 0; i < env->config->nextint; ++i) {
-        unsigned irq = env->config->extint[i];
+}
 
-        env->ext_irq_inputs[i] = env->irq_inputs[irq];
+void *xtensa_get_extint(CPUXtensaState *env, unsigned extint)
+{
+    if (extint < env->config->nextint) {
+        unsigned irq = env->config->extint[extint];
+        return env->irq_inputs[irq];
+    } else {
+        qemu_log("%s: trying to acquire invalid external interrupt %d\n",
+                __func__, extint);
+        return NULL;
     }
-    env->runstall_irq = qemu_allocate_irq(xtensa_set_runstall, env, 0);
-}
-
-qemu_irq *xtensa_get_extints(CPUXtensaState *env)
-{
-    return env->ext_irq_inputs;
-}
-
-qemu_irq xtensa_get_runstall(CPUXtensaState *env)
-{
-    return env->runstall_irq;
 }

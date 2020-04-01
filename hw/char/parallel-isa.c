@@ -1,9 +1,6 @@
 /*
  * QEMU Parallel PORT (ISA bus helpers)
  *
- * These functions reside in a separate file since they also might be
- * required for linking when compiling QEMU without CONFIG_PARALLEL.
- *
  * Copyright (c) 2003 Fabrice Bellard
  *
  * SPDX-License-Identifier: MIT

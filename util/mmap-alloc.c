@@ -50,21 +50,19 @@ size_t qemu_mempath_getpagesize(const char *mem_path)
     struct statfs fs;
     int ret;
 
-    if (mem_path) {
-        do {
-            ret = statfs(mem_path, &fs);
-        } while (ret != 0 && errno == EINTR);
+    do {
+        ret = statfs(mem_path, &fs);
+    } while (ret != 0 && errno == EINTR);
 
-        if (ret != 0) {
-            fprintf(stderr, "Couldn't statfs() memory path: %s\n",
-                    strerror(errno));
-            exit(1);
-        }
+    if (ret != 0) {
+        fprintf(stderr, "Couldn't statfs() memory path: %s\n",
+                strerror(errno));
+        exit(1);
+    }
 
-        if (fs.f_type == HUGETLBFS_MAGIC) {
-            /* It's hugepage, return the huge page size */
-            return fs.f_bsize;
-        }
+    if (fs.f_type == HUGETLBFS_MAGIC) {
+        /* It's hugepage, return the huge page size */
+        return fs.f_bsize;
     }
 #ifdef __sparc__
     /* SPARC Linux needs greater alignment than the pagesize */
@@ -77,20 +75,11 @@ size_t qemu_mempath_getpagesize(const char *mem_path)
 
 void *qemu_ram_mmap(int fd, size_t size, size_t align, bool shared)
 {
-    int flags;
-    int guardfd;
-    size_t offset;
-    size_t pagesize;
-    size_t total;
-    void *guardptr;
-    void *ptr;
-
     /*
      * Note: this always allocates at least one extra page of virtual address
      * space, even if size is already aligned.
      */
-    total = size + align;
-
+    size_t total = size + align;
 #if defined(__powerpc64__) && defined(__linux__)
     /* On ppc64 mappings in the same segment (aka slice) must share the same
      * page size. Since we will be re-allocating part of this segment
@@ -100,45 +89,36 @@ void *qemu_ram_mmap(int fd, size_t size, size_t align, bool shared)
      * We do this unless we are using the system page size, in which case
      * anonymous memory is OK.
      */
-    flags = MAP_PRIVATE;
-    pagesize = qemu_fd_getpagesize(fd);
-    if (fd == -1 || pagesize == getpagesize()) {
-        guardfd = -1;
-        flags |= MAP_ANONYMOUS;
-    } else {
-        guardfd = fd;
-        flags |= MAP_NORESERVE;
-    }
+    int anonfd = fd == -1 || qemu_fd_getpagesize(fd) == getpagesize() ? -1 : fd;
+    int flags = anonfd == -1 ? MAP_ANONYMOUS : MAP_NORESERVE;
+    void *ptr = mmap(0, total, PROT_NONE, flags | MAP_PRIVATE, anonfd, 0);
 #else
-    guardfd = -1;
-    pagesize = getpagesize();
-    flags = MAP_PRIVATE | MAP_ANONYMOUS;
+    void *ptr = mmap(0, total, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 #endif
+    size_t offset;
+    void *ptr1;
 
-    guardptr = mmap(0, total, PROT_NONE, flags, guardfd, 0);
-
-    if (guardptr == MAP_FAILED) {
+    if (ptr == MAP_FAILED) {
         return MAP_FAILED;
     }
 
     assert(is_power_of_2(align));
     /* Always align to host page size */
-    assert(align >= pagesize);
+    assert(align >= getpagesize());
 
-    flags = MAP_FIXED;
-    flags |= fd == -1 ? MAP_ANONYMOUS : 0;
-    flags |= shared ? MAP_SHARED : MAP_PRIVATE;
-    offset = QEMU_ALIGN_UP((uintptr_t)guardptr, align) - (uintptr_t)guardptr;
-
-    ptr = mmap(guardptr + offset, size, PROT_READ | PROT_WRITE, flags, fd, 0);
-
-    if (ptr == MAP_FAILED) {
-        munmap(guardptr, total);
+    offset = QEMU_ALIGN_UP((uintptr_t)ptr, align) - (uintptr_t)ptr;
+    ptr1 = mmap(ptr + offset, size, PROT_READ | PROT_WRITE,
+                MAP_FIXED |
+                (fd == -1 ? MAP_ANONYMOUS : 0) |
+                (shared ? MAP_SHARED : MAP_PRIVATE),
+                fd, 0);
+    if (ptr1 == MAP_FAILED) {
+        munmap(ptr, total);
         return MAP_FAILED;
     }
 
     if (offset > 0) {
-        munmap(guardptr, offset);
+        munmap(ptr, offset);
     }
 
     /*
@@ -146,24 +126,17 @@ void *qemu_ram_mmap(int fd, size_t size, size_t align, bool shared)
      * a guard page guarding against potential buffer overflows.
      */
     total -= offset;
-    if (total > size + pagesize) {
-        munmap(ptr + size + pagesize, total - size - pagesize);
+    if (total > size + getpagesize()) {
+        munmap(ptr1 + size + getpagesize(), total - size - getpagesize());
     }
 
-    return ptr;
+    return ptr1;
 }
 
-void qemu_ram_munmap(int fd, void *ptr, size_t size)
+void qemu_ram_munmap(void *ptr, size_t size)
 {
-    size_t pagesize;
-
     if (ptr) {
         /* Unmap both the RAM block and the guard page */
-#if defined(__powerpc64__) && defined(__linux__)
-        pagesize = qemu_fd_getpagesize(fd);
-#else
-        pagesize = getpagesize();
-#endif
-        munmap(ptr, size + pagesize);
+        munmap(ptr, size + getpagesize());
     }
 }

@@ -31,15 +31,20 @@
 
 #include <stdbool.h>
 
-#include <epoxy/gl.h>
-
 #if defined(__APPLE__)                 /* macOS-Specific GL Includes */
 #include <OpenGL/OpenGL.h>
+#include <OpenGL/gl3.h>
 #include <OpenGL/glext.h>
 #elif defined(_WIN32)                  /* Windows-Specific GL Includes */
-#include <epoxy/wgl.h>
+#include <GL/glew.h>
+#include <GL/wglew.h>
+#include <GL/gl.h>
+#include <GL/wglext.h>
 #else                                  /* Assume GLX */
-#include <epoxy/glx.h>
+#include <GL/glew.h>
+#include <GL/glx.h>
+#include <GL/glxext.h>
+#include <GL/gl.h>
 #endif
 
 /* Used to hold data for the OpenGL context */
@@ -51,6 +56,7 @@ void glo_set_current(GloContext *context);
 
 /* Check GL Extensions */
 bool glo_check_extension(const char* ext_name);
+void* glo_get_extension_proc(const char* extProc);
 
 /* Create an OpenGL context */
 GloContext *glo_context_create(void);

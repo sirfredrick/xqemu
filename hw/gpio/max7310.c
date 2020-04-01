@@ -39,7 +39,7 @@ static void max7310_reset(DeviceState *dev)
     s->command = 0x00;
 }
 
-static uint8_t max7310_rx(I2CSlave *i2c)
+static int max7310_rx(I2CSlave *i2c)
 {
     MAX7310State *s = MAX7310(i2c);
 
@@ -118,7 +118,7 @@ static int max7310_tx(I2CSlave *i2c, uint8_t data)
         break;
 
     case 0x00:	/* Input port - ignore writes */
-        break;
+	break;
     default:
 #ifdef VERBOSE
         printf("%s: unknown register %02x\n", __func__, s->command);
@@ -182,13 +182,14 @@ static void max7310_gpio_set(void *opaque, int line, int level)
 
 /* MAX7310 is SMBus-compatible (can be used with only SMBus protocols),
  * but also accepts sequences that are not SMBus so return an I2C device.  */
-static void max7310_realize(DeviceState *dev, Error **errp)
+static int max7310_init(I2CSlave *i2c)
 {
-    I2CSlave *i2c = I2C_SLAVE(dev);
-    MAX7310State *s = MAX7310(dev);
+    MAX7310State *s = MAX7310(i2c);
 
     qdev_init_gpio_in(&i2c->qdev, max7310_gpio_set, 8);
     qdev_init_gpio_out(&i2c->qdev, s->handler, 8);
+
+    return 0;
 }
 
 static void max7310_class_init(ObjectClass *klass, void *data)
@@ -196,7 +197,7 @@ static void max7310_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
     I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
 
-    dc->realize = max7310_realize;
+    k->init = max7310_init;
     k->event = max7310_event;
     k->recv = max7310_rx;
     k->send = max7310_tx;

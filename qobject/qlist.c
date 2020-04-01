@@ -17,6 +17,7 @@
 #include "qapi/qmp/qnum.h"
 #include "qapi/qmp/qstring.h"
 #include "qemu/queue.h"
+#include "qemu-common.h"
 
 /**
  * qlist_new(): Create a new QList
@@ -38,7 +39,7 @@ static void qlist_copy_elem(QObject *obj, void *opaque)
 {
     QList *dst = opaque;
 
-    qobject_ref(obj);
+    qobject_incref(obj);
     qlist_append_obj(dst, obj);
 }
 
@@ -195,7 +196,7 @@ void qlist_destroy_obj(QObject *obj)
 
     QTAILQ_FOREACH_SAFE(entry, &qlist->head, next, next_entry) {
         QTAILQ_REMOVE(&qlist->head, entry, next);
-        qobject_unref(entry->value);
+        qobject_decref(entry->value);
         g_free(entry);
     }
 

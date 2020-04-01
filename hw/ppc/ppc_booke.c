@@ -28,6 +28,7 @@
 #include "hw/ppc/ppc.h"
 #include "qemu/timer.h"
 #include "sysemu/sysemu.h"
+#include "hw/timer/m48t59.h"
 #include "qemu/log.h"
 #include "hw/loader.h"
 #include "kvm_ppc.h"

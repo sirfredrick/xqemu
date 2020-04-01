@@ -14,7 +14,7 @@ int monitor_fdset_dup_fd_find(int dup_fd)
 
 int monitor_fdset_get_fd(int64_t fdset_id, int flags)
 {
-    return -ENOENT;
+    return -1;
 }
 
 void monitor_fdset_dup_fd_remove(int dupfd)

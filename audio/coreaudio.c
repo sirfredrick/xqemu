@@ -36,6 +36,11 @@
 #define MAC_OS_X_VERSION_10_6 1060
 #endif
 
+typedef struct {
+    int buffer_frames;
+    int nbuffers;
+} CoreaudioConf;
+
 typedef struct coreaudioVoiceOut {
     HWVoiceOut hw;
     pthread_mutex_t mutex;
@@ -502,9 +507,7 @@ static int coreaudio_init_out(HWVoiceOut *hw, struct audsettings *as,
     int err;
     const char *typ = "playback";
     AudioValueRange frameRange;
-    Audiodev *dev = drv_opaque;
-    AudiodevCoreaudioPerDirectionOptions *cpdo = dev->u.coreaudio.out;
-    int frames;
+    CoreaudioConf *conf = drv_opaque;
 
     /* create mutex */
     err = pthread_mutex_init(&core->mutex, NULL);
@@ -535,17 +538,16 @@ static int coreaudio_init_out(HWVoiceOut *hw, struct audsettings *as,
         return -1;
     }
 
-    frames = audio_buffer_frames(
-        qapi_AudiodevCoreaudioPerDirectionOptions_base(cpdo), as, 11610);
-    if (frameRange.mMinimum > frames) {
+    if (frameRange.mMinimum > conf->buffer_frames) {
         core->audioDevicePropertyBufferFrameSize = (UInt32) frameRange.mMinimum;
         dolog ("warning: Upsizing Buffer Frames to %f\n", frameRange.mMinimum);
-    } else if (frameRange.mMaximum < frames) {
+    }
+    else if (frameRange.mMaximum < conf->buffer_frames) {
         core->audioDevicePropertyBufferFrameSize = (UInt32) frameRange.mMaximum;
         dolog ("warning: Downsizing Buffer Frames to %f\n", frameRange.mMaximum);
     }
     else {
-        core->audioDevicePropertyBufferFrameSize = frames;
+        core->audioDevicePropertyBufferFrameSize = conf->buffer_frames;
     }
 
     /* set Buffer Frame Size */
@@ -566,8 +568,7 @@ static int coreaudio_init_out(HWVoiceOut *hw, struct audsettings *as,
                            "Could not get device buffer frame size\n");
         return -1;
     }
-    hw->samples = (cpdo->has_buffer_count ? cpdo->buffer_count : 4) *
-        core->audioDevicePropertyBufferFrameSize;
+    hw->samples = conf->nbuffers * core->audioDevicePropertyBufferFrameSize;
 
     /* get StreamFormat */
     status = coreaudio_get_streamformat(core->outputDeviceID,
@@ -679,14 +680,39 @@ static int coreaudio_ctl_out (HWVoiceOut *hw, int cmd, ...)
     return 0;
 }
 
-static void *coreaudio_audio_init(Audiodev *dev)
+static CoreaudioConf glob_conf = {
+    .buffer_frames = 512,
+    .nbuffers = 4,
+};
+
+static void *coreaudio_audio_init (void)
 {
-    return dev;
+    CoreaudioConf *conf = g_malloc(sizeof(CoreaudioConf));
+    *conf = glob_conf;
+
+    return conf;
 }
 
 static void coreaudio_audio_fini (void *opaque)
 {
+    g_free(opaque);
 }
+
+static struct audio_option coreaudio_options[] = {
+    {
+        .name  = "BUFFER_SIZE",
+        .tag   = AUD_OPT_INT,
+        .valp  = &glob_conf.buffer_frames,
+        .descr = "Size of the buffer in frames"
+    },
+    {
+        .name  = "BUFFER_COUNT",
+        .tag   = AUD_OPT_INT,
+        .valp  = &glob_conf.nbuffers,
+        .descr = "Number of buffers"
+    },
+    { /* End of list */ }
+};
 
 static struct audio_pcm_ops coreaudio_pcm_ops = {
     .init_out = coreaudio_init_out,
@@ -699,6 +725,7 @@ static struct audio_pcm_ops coreaudio_pcm_ops = {
 static struct audio_driver coreaudio_audio_driver = {
     .name           = "coreaudio",
     .descr          = "CoreAudio http://developer.apple.com/audio/coreaudio.html",
+    .options        = coreaudio_options,
     .init           = coreaudio_audio_init,
     .fini           = coreaudio_audio_fini,
     .pcm_ops        = &coreaudio_pcm_ops,

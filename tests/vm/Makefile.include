@@ -1,10 +1,9 @@
 # Makefile for VM tests
 
-.PHONY: vm-build-all vm-clean-all
+.PHONY: vm-build-all
 
-IMAGES := ubuntu.i386 freebsd netbsd openbsd centos
-IMAGES_DIR := $(HOME)/.cache/qemu-vm/images
-IMAGE_FILES := $(patsubst %, $(IMAGES_DIR)/%.img, $(IMAGES))
+IMAGES := ubuntu.i386 freebsd netbsd openbsd
+IMAGE_FILES := $(patsubst %, tests/vm/%.img, $(IMAGES))
 
 .PRECIOUS: $(IMAGE_FILES)
 
@@ -15,25 +14,12 @@ vm-test:
 	@echo "  vm-build-freebsd                - Build QEMU in FreeBSD VM"
 	@echo "  vm-build-netbsd                 - Build QEMU in NetBSD VM"
 	@echo "  vm-build-openbsd                - Build QEMU in OpenBSD VM"
-	@echo "  vm-build-centos                 - Build QEMU in CentOS VM, with Docker"
-	@echo ""
-	@echo "  vm-build-all                    - Build QEMU in all VMs"
-	@echo "  vm-clean-all                    - Clean up VM images"
-	@echo
-	@echo "Special variables:"
-	@echo "    BUILD_TARGET=foo		 - override the build target"
-	@echo "    TARGET_LIST=a,b,c    	 - Override target list in builds."
-	@echo '    EXTRA_CONFIGURE_OPTS="..."'
 
 vm-build-all: $(addprefix vm-build-, $(IMAGES))
 
-vm-clean-all:
-	rm -f $(IMAGE_FILES)
-
-$(IMAGES_DIR)/%.img:	$(SRC_PATH)/tests/vm/% \
-			$(SRC_PATH)/tests/vm/basevm.py \
-			$(SRC_PATH)/tests/vm/Makefile.include
-	@mkdir -p $(IMAGES_DIR)
+tests/vm/%.img: $(SRC_PATH)/tests/vm/% \
+		$(SRC_PATH)/tests/vm/basevm.py \
+		$(SRC_PATH)/tests/vm/Makefile.include
 	$(call quiet-command, \
 		$< \
 		$(if $(V)$(DEBUG), --debug) \
@@ -44,17 +30,13 @@ $(IMAGES_DIR)/%.img:	$(SRC_PATH)/tests/vm/% \
 
 
 # Build in VM $(IMAGE)
-vm-build-%: $(IMAGES_DIR)/%.img
+vm-build-%: tests/vm/%.img
 	$(call quiet-command, \
 		$(SRC_PATH)/tests/vm/$* \
 		$(if $(V)$(DEBUG), --debug) \
 		$(if $(DEBUG), --interactive) \
 		$(if $(J),--jobs $(J)) \
-		$(if $(V),--verbose) \
 		--image "$<" \
-		$(if $(BUILD_TARGET),--build-target $(BUILD_TARGET)) \
-		--build-qemu $(SRC_PATH) -- \
-		$(if $(TARGET_LIST),--target-list=$(TARGET_LIST)) \
-		$(if $(EXTRA_CONFIGURE_OPTS),$(EXTRA_CONFIGURE_OPTS)), \
+		--build-qemu $(SRC_PATH), \
 		"  VM-BUILD $*")
 

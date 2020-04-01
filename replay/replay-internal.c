@@ -35,12 +35,6 @@ static void replay_write_error(void)
     }
 }
 
-static void replay_read_error(void)
-{
-    error_report("error reading the replay data");
-    exit(1);
-}
-
 void replay_put_byte(uint8_t byte)
 {
     if (replay_file) {
@@ -89,11 +83,7 @@ uint8_t replay_get_byte(void)
 {
     uint8_t byte = 0;
     if (replay_file) {
-        int r = getc(replay_file);
-        if (r == EOF) {
-            replay_read_error();
-        }
-        byte = r;
+        byte = getc(replay_file);
     }
     return byte;
 }
@@ -136,7 +126,7 @@ void replay_get_array(uint8_t *buf, size_t *size)
     if (replay_file) {
         *size = replay_get_dword();
         if (fread(buf, 1, *size, replay_file) != *size) {
-            replay_read_error();
+            error_report("replay read error");
         }
     }
 }
@@ -147,7 +137,7 @@ void replay_get_array_alloc(uint8_t **buf, size_t *size)
         *size = replay_get_dword();
         *buf = g_malloc(*size);
         if (fread(*buf, 1, *size, replay_file) != *size) {
-            replay_read_error();
+            error_report("replay read error");
         }
     }
 }
@@ -227,25 +217,20 @@ void replay_mutex_unlock(void)
     }
 }
 
-void replay_advance_current_step(uint64_t current_step)
-{
-    int diff = (int)(replay_get_current_step() - replay_state.current_step);
-
-    /* Time can only go forward */
-    assert(diff >= 0);
-
-    if (diff > 0) {
-        replay_put_event(EVENT_INSTRUCTION);
-        replay_put_dword(diff);
-        replay_state.current_step += diff;
-    }
-}
-
 /*! Saves cached instructions. */
 void replay_save_instructions(void)
 {
     if (replay_file && replay_mode == REPLAY_MODE_RECORD) {
         g_assert(replay_mutex_locked());
-        replay_advance_current_step(replay_get_current_step());
+        int diff = (int)(replay_get_current_step() - replay_state.current_step);
+
+        /* Time can only go forward */
+        assert(diff >= 0);
+
+        if (diff > 0) {
+            replay_put_event(EVENT_INSTRUCTION);
+            replay_put_dword(diff);
+            replay_state.current_step += diff;
+        }
     }
 }

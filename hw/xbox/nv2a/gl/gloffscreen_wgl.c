@@ -126,9 +126,15 @@ static void glo_init(void) {
     }
     wglMakeCurrent(glo.hDC, glo.hContext);
 
-    if (!epoxy_has_wgl_extension(glo.hDC, "ARB_create_context")
-        || !epoxy_has_wgl_extension(glo.hDC, "ARB_pixel_format")
-        || !epoxy_has_wgl_extension(glo.hDC, "ARB_pbuffer")) {
+    /* Initialize glew */
+    if (glewInit() != GLEW_OK) {
+        fprintf(stderr, "Glew init failed.\n");
+        abort();
+    }
+
+    if (!WGLEW_ARB_create_context
+        || !WGLEW_ARB_pixel_format
+        || !WGLEW_ARB_pbuffer) {
         fprintf(stderr, "Unable to load the required WGL extensions\n");
         abort();
     }
@@ -181,9 +187,8 @@ GloContext *glo_context_create(void) {
 }
 
 /* Set current context */
-void glo_set_current(GloContext *context)
-{
-    epoxy_handle_external_wglMakeCurrent();
+void glo_set_current(GloContext *context) {
+
     if (context == NULL) {
         wglMakeCurrent(NULL, NULL);
     } else {

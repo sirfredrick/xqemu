@@ -562,20 +562,19 @@ static void qobject_input_type_number_keyval(Visitor *v, const char *name,
 {
     QObjectInputVisitor *qiv = to_qiv(v);
     const char *str = qobject_input_get_keyval(qiv, name, errp);
-    double val;
+    char *endp;
 
     if (!str) {
         return;
     }
 
-    if (qemu_strtod_finite(str, NULL, &val)) {
+    errno = 0;
+    *obj = strtod(str, &endp);
+    if (errno || endp == str || *endp || !isfinite(*obj)) {
         /* TODO report -ERANGE more nicely */
         error_setg(errp, QERR_INVALID_PARAMETER_TYPE,
                    full_name(qiv, name), "number");
-        return;
     }
-
-    *obj = val;
 }
 
 static void qobject_input_type_any(Visitor *v, const char *name, QObject **obj,
@@ -589,7 +588,8 @@ static void qobject_input_type_any(Visitor *v, const char *name, QObject **obj,
         return;
     }
 
-    *obj = qobject_ref(qobj);
+    qobject_incref(qobj);
+    *obj = qobj;
 }
 
 static void qobject_input_type_null(Visitor *v, const char *name,
@@ -652,7 +652,7 @@ static void qobject_input_free(Visitor *v)
         qobject_input_stack_object_free(tos);
     }
 
-    qobject_unref(qiv->root);
+    qobject_decref(qiv->root);
     if (qiv->errname) {
         g_string_free(qiv->errname, TRUE);
     }
@@ -677,7 +677,8 @@ static QObjectInputVisitor *qobject_input_visitor_base_new(QObject *obj)
     v->visitor.optional = qobject_input_optional;
     v->visitor.free = qobject_input_free;
 
-    v->root = qobject_ref(obj);
+    v->root = obj;
+    qobject_incref(obj);
 
     return v;
 }
@@ -726,6 +727,11 @@ Visitor *qobject_input_visitor_new_str(const char *str,
     if (is_json) {
         obj = qobject_from_json(str, errp);
         if (!obj) {
+            /* Work around qobject_from_json() lossage TODO fix that */
+            if (errp && !*errp) {
+                error_setg(errp, "JSON parse error");
+                return NULL;
+            }
             return NULL;
         }
         args = qobject_to(QDict, obj);
@@ -738,7 +744,7 @@ Visitor *qobject_input_visitor_new_str(const char *str,
         }
         v = qobject_input_visitor_new_keyval(QOBJECT(args));
     }
-    qobject_unref(args);
+    QDECREF(args);
 
     return v;
 }

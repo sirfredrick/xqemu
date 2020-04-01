@@ -99,35 +99,36 @@ static const MemoryRegionOps puv3_gpio_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
-static void puv3_gpio_realize(DeviceState *dev, Error **errp)
+static int puv3_gpio_init(SysBusDevice *dev)
 {
     PUV3GPIOState *s = PUV3_GPIO(dev);
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
 
     s->reg_GPLR = 0;
     s->reg_GPDR = 0;
 
     /* FIXME: these irqs not handled yet */
-    sysbus_init_irq(sbd, &s->irq[PUV3_IRQS_GPIOLOW0]);
-    sysbus_init_irq(sbd, &s->irq[PUV3_IRQS_GPIOLOW1]);
-    sysbus_init_irq(sbd, &s->irq[PUV3_IRQS_GPIOLOW2]);
-    sysbus_init_irq(sbd, &s->irq[PUV3_IRQS_GPIOLOW3]);
-    sysbus_init_irq(sbd, &s->irq[PUV3_IRQS_GPIOLOW4]);
-    sysbus_init_irq(sbd, &s->irq[PUV3_IRQS_GPIOLOW5]);
-    sysbus_init_irq(sbd, &s->irq[PUV3_IRQS_GPIOLOW6]);
-    sysbus_init_irq(sbd, &s->irq[PUV3_IRQS_GPIOLOW7]);
-    sysbus_init_irq(sbd, &s->irq[PUV3_IRQS_GPIOHIGH]);
+    sysbus_init_irq(dev, &s->irq[PUV3_IRQS_GPIOLOW0]);
+    sysbus_init_irq(dev, &s->irq[PUV3_IRQS_GPIOLOW1]);
+    sysbus_init_irq(dev, &s->irq[PUV3_IRQS_GPIOLOW2]);
+    sysbus_init_irq(dev, &s->irq[PUV3_IRQS_GPIOLOW3]);
+    sysbus_init_irq(dev, &s->irq[PUV3_IRQS_GPIOLOW4]);
+    sysbus_init_irq(dev, &s->irq[PUV3_IRQS_GPIOLOW5]);
+    sysbus_init_irq(dev, &s->irq[PUV3_IRQS_GPIOLOW6]);
+    sysbus_init_irq(dev, &s->irq[PUV3_IRQS_GPIOLOW7]);
+    sysbus_init_irq(dev, &s->irq[PUV3_IRQS_GPIOHIGH]);
 
     memory_region_init_io(&s->iomem, OBJECT(s), &puv3_gpio_ops, s, "puv3_gpio",
             PUV3_REGS_OFFSET);
-    sysbus_init_mmio(sbd, &s->iomem);
+    sysbus_init_mmio(dev, &s->iomem);
+
+    return 0;
 }
 
 static void puv3_gpio_class_init(ObjectClass *klass, void *data)
 {
-    DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
 
-    dc->realize = puv3_gpio_realize;
+    sdc->init = puv3_gpio_init;
 }
 
 static const TypeInfo puv3_gpio_info = {

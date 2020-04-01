@@ -11,6 +11,7 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "exec/address-spaces.h"
+#include "exec/exec-all.h"
 #include "qemu/error-report.h"
 
 #include "target/i386/hax-i386.h"
@@ -56,7 +57,7 @@ typedef struct HAXMapping {
  * send to the kernel only the removal of the pages from the MMIO hole after
  * having computed locally the result of the deletion and additions.
  */
-static QTAILQ_HEAD(, HAXMapping) mappings =
+static QTAILQ_HEAD(HAXMappingListHead, HAXMapping) mappings =
     QTAILQ_HEAD_INITIALIZER(mappings);
 
 /**
@@ -281,14 +282,7 @@ static void hax_log_sync(MemoryListener *listener,
         return;
     }
 
-#ifndef XBOX
-    /* FIXME: Marking all pages as always dirty has some really bad consequences
-     * for the current NV2A emulation. The lesser of two evils for now is to
-     * leave the pages as-is. Eventually this will be replaced by proper dirty
-     * page tracking once HAXM supports it.
-     */
     memory_region_set_dirty(mr, 0, int128_get64(section->size));
-#endif
 }
 
 static MemoryListener hax_memory_listener = {
@@ -317,17 +311,8 @@ static void hax_ram_block_added(RAMBlockNotifier *n, void *host, size_t size)
     }
 }
 
-#ifdef XBOX
-static void hax_ram_block_removed(RAMBlockNotifier *n, void *host, size_t size)
-{
-}
-#endif
-
 static struct RAMBlockNotifier hax_ram_notifier = {
     .ram_block_added = hax_ram_block_added,
-#ifdef XBOX
-    .ram_block_removed = hax_ram_block_removed,
-#endif
 };
 
 void hax_memory_init(void)

@@ -53,9 +53,6 @@
  */
 
 struct HBitmap {
-    /* Size of the bitmap, as requested in hbitmap_alloc. */
-    uint64_t orig_size;
-
     /* Number of total bits in the bottom level.  */
     uint64_t size;
 
@@ -191,28 +188,16 @@ void hbitmap_iter_init(HBitmapIter *hbi, const HBitmap *hb, uint64_t first)
     }
 }
 
-int64_t hbitmap_next_zero(const HBitmap *hb, uint64_t start, uint64_t count)
+int64_t hbitmap_next_zero(const HBitmap *hb, uint64_t start)
 {
     size_t pos = (start >> hb->granularity) >> BITS_PER_LEVEL;
     unsigned long *last_lev = hb->levels[HBITMAP_LEVELS - 1];
+    uint64_t sz = hb->sizes[HBITMAP_LEVELS - 1];
     unsigned long cur = last_lev[pos];
-    unsigned start_bit_offset;
-    uint64_t end_bit, sz;
+    unsigned start_bit_offset =
+            (start >> hb->granularity) & (BITS_PER_LONG - 1);
     int64_t res;
 
-    if (start >= hb->orig_size || count == 0) {
-        return -1;
-    }
-
-    end_bit = count > hb->orig_size - start ?
-                hb->size :
-                ((start + count - 1) >> hb->granularity) + 1;
-    sz = (end_bit + BITS_PER_LONG - 1) >> BITS_PER_LEVEL;
-
-    /* There may be some zero bits in @cur before @start. We are not interested
-     * in them, let's set them.
-     */
-    start_bit_offset = (start >> hb->granularity) & (BITS_PER_LONG - 1);
     cur |= (1UL << start_bit_offset) - 1;
     assert((start >> hb->granularity) < hb->size);
 
@@ -229,7 +214,7 @@ int64_t hbitmap_next_zero(const HBitmap *hb, uint64_t start, uint64_t count)
     }
 
     res = (pos << BITS_PER_LEVEL) + ctol(cur);
-    if (res >= end_bit) {
+    if (res >= hb->size) {
         return -1;
     }
 
@@ -240,45 +225,6 @@ int64_t hbitmap_next_zero(const HBitmap *hb, uint64_t start, uint64_t count)
     }
 
     return res;
-}
-
-bool hbitmap_next_dirty_area(const HBitmap *hb, uint64_t *start,
-                             uint64_t *count)
-{
-    HBitmapIter hbi;
-    int64_t firt_dirty_off, area_end;
-    uint32_t granularity = 1UL << hb->granularity;
-    uint64_t end;
-
-    if (*start >= hb->orig_size || *count == 0) {
-        return false;
-    }
-
-    end = *count > hb->orig_size - *start ? hb->orig_size : *start + *count;
-
-    hbitmap_iter_init(&hbi, hb, *start);
-    firt_dirty_off = hbitmap_iter_next(&hbi);
-
-    if (firt_dirty_off < 0 || firt_dirty_off >= end) {
-        return false;
-    }
-
-    if (firt_dirty_off + granularity >= end) {
-        area_end = end;
-    } else {
-        area_end = hbitmap_next_zero(hb, firt_dirty_off + granularity,
-                                     end - firt_dirty_off - granularity);
-        if (area_end < 0) {
-            area_end = end;
-        }
-    }
-
-    if (firt_dirty_off > *start) {
-        *start = firt_dirty_off;
-    }
-    *count = area_end - *start;
-
-    return true;
 }
 
 bool hbitmap_empty(const HBitmap *hb)
@@ -702,8 +648,6 @@ HBitmap *hbitmap_alloc(uint64_t size, int granularity)
     HBitmap *hb = g_new0(struct HBitmap, 1);
     unsigned i;
 
-    hb->orig_size = size;
-
     assert(granularity >= 0 && granularity < 64);
     size = (size + (1ULL << granularity) - 1) >> granularity;
     assert(size <= ((uint64_t)1 << HBITMAP_LOG_MAX_SIZE));
@@ -775,10 +719,6 @@ void hbitmap_truncate(HBitmap *hb, uint64_t size)
     }
 }
 
-bool hbitmap_can_merge(const HBitmap *a, const HBitmap *b)
-{
-    return (a->size == b->size) && (a->granularity == b->granularity);
-}
 
 /**
  * Given HBitmaps A and B, let A := A (BITOR) B.
@@ -787,15 +727,14 @@ bool hbitmap_can_merge(const HBitmap *a, const HBitmap *b)
  * @return true if the merge was successful,
  *         false if it was not attempted.
  */
-bool hbitmap_merge(const HBitmap *a, const HBitmap *b, HBitmap *result)
+bool hbitmap_merge(HBitmap *a, const HBitmap *b)
 {
     int i;
     uint64_t j;
 
-    if (!hbitmap_can_merge(a, b) || !hbitmap_can_merge(a, result)) {
+    if ((a->size != b->size) || (a->granularity != b->granularity)) {
         return false;
     }
-    assert(hbitmap_can_merge(b, result));
 
     if (hbitmap_count(b) == 0) {
         return true;
@@ -807,12 +746,9 @@ bool hbitmap_merge(const HBitmap *a, const HBitmap *b, HBitmap *result)
      */
     for (i = HBITMAP_LEVELS - 1; i >= 0; i--) {
         for (j = 0; j < a->sizes[i]; j++) {
-            result->levels[i][j] = a->levels[i][j] | b->levels[i][j];
+            a->levels[i][j] |= b->levels[i][j];
         }
     }
-
-    /* Recompute the dirty count */
-    result->count = hb_count_between(result, 0, result->size - 1);
 
     return true;
 }

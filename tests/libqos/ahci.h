@@ -596,7 +596,8 @@ void ahci_port_check_interrupts(AHCIQState *ahci, uint8_t port,
                                 uint32_t intr_mask);
 void ahci_port_check_nonbusy(AHCIQState *ahci, uint8_t port, uint8_t slot);
 void ahci_port_check_d2h_sanity(AHCIQState *ahci, uint8_t port, uint8_t slot);
-void ahci_port_check_pio_sanity(AHCIQState *ahci, AHCICommand *cmd);
+void ahci_port_check_pio_sanity(AHCIQState *ahci, uint8_t port,
+                                uint8_t slot, size_t buffsize);
 void ahci_port_check_cmd_sanity(AHCIQState *ahci, AHCICommand *cmd);
 
 /* Misc */
@@ -622,7 +623,7 @@ void ahci_atapi_load(AHCIQState *ahci, uint8_t port);
 
 /* Command: Fine-grained lifecycle */
 AHCICommand *ahci_command_create(uint8_t command_name);
-AHCICommand *ahci_atapi_command_create(uint8_t scsi_cmd, uint16_t bcl, bool dma);
+AHCICommand *ahci_atapi_command_create(uint8_t scsi_cmd, uint16_t bcl);
 void ahci_command_commit(AHCIQState *ahci, AHCICommand *cmd, uint8_t port);
 void ahci_command_issue(AHCIQState *ahci, AHCICommand *cmd);
 void ahci_command_issue_async(AHCIQState *ahci, AHCICommand *cmd);

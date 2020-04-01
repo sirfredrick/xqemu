@@ -174,15 +174,16 @@ static void cd_read_sector_cb(void *opaque, int ret)
 
 static int cd_read_sector(IDEState *s)
 {
-    void *buf;
-
     if (s->cd_sector_size != 2048 && s->cd_sector_size != 2352) {
         block_acct_invalid(blk_get_stats(s->blk), BLOCK_ACCT_READ);
         return -EINVAL;
     }
 
-    buf = (s->cd_sector_size == 2352) ? s->io_buffer + 16 : s->io_buffer;
-    qemu_iovec_init_buf(&s->qiov, buf, ATAPI_SECTOR_SIZE);
+    s->iov.iov_base = (s->cd_sector_size == 2352) ?
+                      s->io_buffer + 16 : s->io_buffer;
+
+    s->iov.iov_len = ATAPI_SECTOR_SIZE;
+    qemu_iovec_init_external(&s->qiov, &s->iov, 1);
 
     trace_cd_read_sector(s->lba);
 
@@ -244,11 +245,15 @@ static uint16_t atapi_byte_count_limit(IDEState *s)
 void ide_atapi_cmd_reply_end(IDEState *s)
 {
     int byte_count_limit, size, ret;
-    while (s->packet_transfer_size > 0) {
-        trace_ide_atapi_cmd_reply_end(s, s->packet_transfer_size,
-                                      s->elementary_transfer_size,
-                                      s->io_buffer_index);
-
+    trace_ide_atapi_cmd_reply_end(s, s->packet_transfer_size,
+                                  s->elementary_transfer_size,
+                                  s->io_buffer_index);
+    if (s->packet_transfer_size <= 0) {
+        /* end of transfer */
+        ide_atapi_cmd_ok(s);
+        ide_set_irq(s->bus);
+        trace_ide_atapi_cmd_reply_end_eot(s, s->status);
+    } else {
         /* see if a new sector must be read */
         if (s->lba != -1 && s->io_buffer_index >= s->cd_sector_size) {
             if (!s->elementary_transfer_size) {
@@ -274,10 +279,14 @@ void ide_atapi_cmd_reply_end(IDEState *s)
             size = s->cd_sector_size - s->io_buffer_index;
             if (size > s->elementary_transfer_size)
                 size = s->elementary_transfer_size;
+            s->packet_transfer_size -= size;
+            s->elementary_transfer_size -= size;
+            s->io_buffer_index += size;
+            ide_transfer_start(s, s->io_buffer + s->io_buffer_index - size,
+                               size, ide_atapi_cmd_reply_end);
         } else {
             /* a new transfer is needed */
             s->nsector = (s->nsector & ~7) | ATAPI_INT_REASON_IO;
-            ide_set_irq(s->bus);
             byte_count_limit = atapi_byte_count_limit(s);
             trace_ide_atapi_cmd_reply_end_bcl(s, byte_count_limit);
             size = s->packet_transfer_size;
@@ -295,27 +304,15 @@ void ide_atapi_cmd_reply_end(IDEState *s)
                 if (size > (s->cd_sector_size - s->io_buffer_index))
                     size = (s->cd_sector_size - s->io_buffer_index);
             }
+            s->packet_transfer_size -= size;
+            s->elementary_transfer_size -= size;
+            s->io_buffer_index += size;
+            ide_transfer_start(s, s->io_buffer + s->io_buffer_index - size,
+                               size, ide_atapi_cmd_reply_end);
+            ide_set_irq(s->bus);
             trace_ide_atapi_cmd_reply_end_new(s, s->status);
         }
-        s->packet_transfer_size -= size;
-        s->elementary_transfer_size -= size;
-        s->io_buffer_index += size;
-
-        /* Some adapters process PIO data right away.  In that case, we need
-         * to avoid mutual recursion between ide_transfer_start
-         * and ide_atapi_cmd_reply_end.
-         */
-        if (!ide_transfer_start_norecurse(s,
-                                          s->io_buffer + s->io_buffer_index - size,
-                                          size, ide_atapi_cmd_reply_end)) {
-            return;
-        }
     }
-
-    /* end of transfer */
-    trace_ide_atapi_cmd_reply_end_eot(s, s->status);
-    ide_atapi_cmd_ok(s);
-    ide_set_irq(s->bus);
 }
 
 /* send a reply of 'size' bytes in s->io_buffer to an ATAPI command */
@@ -420,8 +417,9 @@ static void ide_atapi_cmd_read_dma_cb(void *opaque, int ret)
         data_offset = 0;
     }
     trace_ide_atapi_cmd_read_dma_cb_aio(s, s->lba, n);
-    qemu_iovec_init_buf(&s->bus->dma->qiov, s->io_buffer + data_offset,
-                        n * ATAPI_SECTOR_SIZE);
+    s->bus->dma->iov.iov_base = (void *)(s->io_buffer + data_offset);
+    s->bus->dma->iov.iov_len = n * ATAPI_SECTOR_SIZE;
+    qemu_iovec_init_external(&s->bus->dma->qiov, &s->bus->dma->iov, 1);
 
     s->bus->dma->aiocb = ide_buffered_readv(s, (int64_t)s->lba << 2,
                                             &s->bus->dma->qiov, n * 4,

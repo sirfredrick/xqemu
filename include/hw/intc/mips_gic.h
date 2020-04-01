@@ -11,7 +11,6 @@
 #ifndef MIPS_GIC_H
 #define MIPS_GIC_H
 
-#include "qemu/units.h"
 #include "hw/timer/mips_gictimer.h"
 #include "cpu.h"
 /*
@@ -20,7 +19,7 @@
 
 /* The MIPS default location */
 #define GIC_BASE_ADDR           0x1bdc0000ULL
-#define GIC_ADDRSPACE_SZ        (128 * KiB)
+#define GIC_ADDRSPACE_SZ        (128 * 1024)
 
 /* Constants */
 #define GIC_POL_POS     1

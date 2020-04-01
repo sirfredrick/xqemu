@@ -3,31 +3,31 @@
  *
  * Copyright (C) 2012 espes
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Based on pm_smbus.c
+ * Copyright (c) 2006 Fabrice Bellard
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
+ * Based on Linux drivers/i2c/busses/i2c-amd756.c
+ * Copyright (c) 1999-2002 Merlin Hughes <merlin@merlin.org>
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 or
+ * (at your option) version 3 of the License.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "qemu/osdep.h"
 #include "hw/hw.h"
 #include "hw/i386/pc.h"
 #include "hw/xbox/amd_smbus.h"
-#include "hw/i2c/i2c.h"
-#include "hw/i2c/smbus_master.h"
+#include "hw/i2c/smbus.h"
 
 // #define DEBUG
 #ifdef DEBUG
@@ -113,16 +113,14 @@ static void amd756_smb_transaction(AMD756SMBus *s)
             s->smb_data0 = val;
             s->smb_data1 = val >> 8;
         } else {
-            smbus_write_word(bus, addr, cmd, (s->smb_data1 << 8) | s->smb_data0);
+            smbus_write_word(bus, addr, cmd, s->smb_data0);
         }
         break;
     case AMD756_BLOCK_DATA:
         if (read) {
-            s->smb_data0 = smbus_read_block(bus, addr, cmd, s->smb_data,
-                                            sizeof(s->smb_data), true, true);
+            s->smb_data0 = smbus_read_block(bus, addr, cmd, s->smb_data);
         } else {
-            smbus_write_block(bus, addr, cmd, s->smb_data, s->smb_data0,
-                              true);
+            smbus_write_block(bus, addr, cmd, s->smb_data, s->smb_data0);
         }
         break;
     default:

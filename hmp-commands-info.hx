@@ -19,7 +19,6 @@ ETEXI
         .params     = "",
         .help       = "show the version of QEMU",
         .cmd        = hmp_info_version,
-        .flags      = "p",
     },
 
 STEXI
@@ -48,7 +47,6 @@ ETEXI
         .params     = "",
         .help       = "show the character devices",
         .cmd        = hmp_info_chardev,
-        .flags      = "p",
     },
 
 STEXI
@@ -167,7 +165,6 @@ ETEXI
         .params     = "",
         .help       = "show the command line history",
         .cmd        = hmp_info_history,
-        .flags      = "p",
     },
 
 STEXI
@@ -201,21 +198,7 @@ ETEXI
 STEXI
 @item info pic
 @findex info pic
-Show PIC state.
-ETEXI
-
-    {
-        .name       = "rdma",
-        .args_type  = "",
-        .params     = "",
-        .help       = "show RDMA state",
-        .cmd        = hmp_info_rdma,
-    },
-
-STEXI
-@item info rdma
-@findex info rdma
-Show RDMA state.
+Show i8259 (PIC) state.
 ETEXI
 
     {
@@ -267,11 +250,10 @@ ETEXI
 
     {
         .name       = "mtree",
-        .args_type  = "flatview:-f,dispatch_tree:-d,owner:-o",
-        .params     = "[-f][-d][-o]",
+        .args_type  = "flatview:-f,dispatch_tree:-d",
+        .params     = "[-f][-d]",
         .help       = "show memory tree (-f: dump flat view for address spaces;"
-                      "-d: dump dispatch tree, valid with -f only);"
-                      "-o: dump region owners/parents",
+                      "-d: dump dispatch tree, valid with -f only)",
         .cmd        = hmp_info_mtree,
     },
 
@@ -311,28 +293,6 @@ STEXI
 @item info opcount
 @findex info opcount
 Show dynamic compiler opcode counters
-ETEXI
-
-    {
-        .name       = "sync-profile",
-        .args_type  = "mean:-m,no_coalesce:-n,max:i?",
-        .params     = "[-m] [-n] [max]",
-        .help       = "show synchronization profiling info, up to max entries "
-                      "(default: 10), sorted by total wait time. (-m: sort by "
-                      "mean wait time; -n: do not coalesce objects with the "
-                      "same call site)",
-        .cmd        = hmp_info_sync_profile,
-    },
-
-STEXI
-@item info sync-profile [-m|-n] [@var{max}]
-@findex info sync-profile
-Show synchronization profiling info, up to @var{max} entries (default: 10),
-sorted by total wait time.
-        -m: sort by mean wait time
-        -n: do not coalesce objects with the same call site
-When different objects that share the same call site are coalesced, the "Object"
-field shows---enclosed in brackets---the number of objects being coalesced.
 ETEXI
 
     {
@@ -439,7 +399,6 @@ ETEXI
         .params     = "",
         .help       = "show the current VM status (running|paused)",
         .cmd        = hmp_info_status,
-        .flags      = "p",
     },
 
 STEXI
@@ -462,7 +421,6 @@ STEXI
 Show which guest mouse is receiving events.
 ETEXI
 
-#if defined(CONFIG_VNC)
     {
         .name       = "vnc",
         .args_type  = "",
@@ -470,7 +428,6 @@ ETEXI
         .help       = "show the vnc server status",
         .cmd        = hmp_info_vnc,
     },
-#endif
 
 STEXI
 @item info vnc
@@ -500,7 +457,6 @@ ETEXI
         .params     = "",
         .help       = "show the current VM name",
         .cmd        = hmp_info_name,
-        .flags      = "p",
     },
 
 STEXI
@@ -515,7 +471,6 @@ ETEXI
         .params     = "",
         .help       = "show the current VM UUID",
         .cmd        = hmp_info_uuid,
-        .flags      = "p",
     },
 
 STEXI
@@ -658,7 +613,6 @@ ETEXI
         .params     = "[path]",
         .help       = "show QOM composition tree",
         .cmd        = hmp_info_qom_tree,
-        .flags      = "p",
     },
 
 STEXI
@@ -717,7 +671,6 @@ ETEXI
         .params     = "",
         .help       = "show memory backends",
         .cmd        = hmp_info_memdev,
-        .flags      = "p",
     },
 
 STEXI
@@ -746,7 +699,6 @@ ETEXI
         .params     = "",
         .help       = "show iothreads",
         .cmd        = hmp_info_iothreads,
-        .flags      = "p",
     },
 
 STEXI
@@ -877,7 +829,6 @@ ETEXI
         .params     = "",
         .help       = "Show information about hotpluggable CPUs",
         .cmd        = hmp_hotpluggable_cpus,
-        .flags      = "p",
     },
 
 STEXI

@@ -13,7 +13,6 @@
 
 use warnings;
 use strict;
-use File::Basename;
 
 my $buf = '';
 my %seen = ();
@@ -24,19 +23,12 @@ sub out {
     %seen = ();
 }
 
-$#ARGV == 0 or die "usage: $0 FILE";
-my $in = $ARGV[0];
-my $dir = dirname($in);
-open(IN, $in) or die "open $in: $!";
-chdir($dir) or die "chdir $dir: $!";
-
-while (<IN>) {
-    if (/^(disable |(tcg) |vcpu )*([a-z_0-9]+)\(/i) {
-        my $pat = "trace_$3";
-        $pat .= '_tcg' if (defined $2);
-        open GREP, '-|', 'git', 'grep', '-lw', '--max-depth', '1', $pat
+while (<>) {
+    if (/^(disable )?([a-z_0-9]+)\(/) {
+        open GREP, '-|', 'git', 'grep', '-lw', "trace_$2"
             or die "run git grep: $!";
-        while (my $fname = <GREP>) {
+        my $fname;
+        while ($fname = <GREP>) {
             chomp $fname;
             next if $seen{$fname} || $fname eq 'trace-events';
             $seen{$fname} = 1;
@@ -57,4 +49,3 @@ while (<IN>) {
 }
 
 out;
-close(IN) or die "close $in: $!";

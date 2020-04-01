@@ -15,7 +15,6 @@
 
 #include "hw/pci/pci_regs.h"
 #include "qemu/host-utils.h"
-#include "libqos/qgraph.h"
 
 void qpci_device_foreach(QPCIBus *bus, int vendor_id, int device_id,
                          void (*func)(QPCIDevice *dev, int devfn, void *data),
@@ -51,34 +50,13 @@ void qpci_device_foreach(QPCIBus *bus, int vendor_id, int device_id,
     }
 }
 
-bool qpci_has_buggy_msi(QPCIDevice *dev)
-{
-    return dev->bus->has_buggy_msi;
-}
-
-bool qpci_check_buggy_msi(QPCIDevice *dev)
-{
-    if (qpci_has_buggy_msi(dev)) {
-        g_test_skip("Skipping due to incomplete support for MSI");
-        return true;
-    }
-    return false;
-}
-
-static void qpci_device_set(QPCIDevice *dev, QPCIBus *bus, int devfn)
-{
-    g_assert(dev);
-
-    dev->bus = bus;
-    dev->devfn = devfn;
-}
-
 QPCIDevice *qpci_device_find(QPCIBus *bus, int devfn)
 {
     QPCIDevice *dev;
 
     dev = g_malloc0(sizeof(*dev));
-    qpci_device_set(dev, bus, devfn);
+    dev->bus = bus;
+    dev->devfn = devfn;
 
     if (qpci_config_readw(dev, PCI_VENDOR_ID) == 0xFFFF) {
         g_free(dev);
@@ -86,17 +64,6 @@ QPCIDevice *qpci_device_find(QPCIBus *bus, int devfn)
     }
 
     return dev;
-}
-
-void qpci_device_init(QPCIDevice *dev, QPCIBus *bus, QPCIAddress *addr)
-{
-    uint16_t vendor_id, device_id;
-
-    qpci_device_set(dev, bus, addr->devfn);
-    vendor_id = qpci_config_readw(dev, PCI_VENDOR_ID);
-    device_id = qpci_config_readw(dev, PCI_DEVICE_ID);
-    g_assert(!addr->vendor_id || vendor_id == addr->vendor_id);
-    g_assert(!addr->device_id || device_id == addr->device_id);
 }
 
 void qpci_device_enable(QPCIDevice *dev)
@@ -429,11 +396,9 @@ QPCIBar qpci_legacy_iomap(QPCIDevice *dev, uint16_t addr)
     return bar;
 }
 
-void add_qpci_address(QOSGraphEdgeOptions *opts, QPCIAddress *addr)
+void qpci_plug_device_test(const char *driver, const char *id,
+                           uint8_t slot, const char *opts)
 {
-    g_assert(addr);
-    g_assert(opts);
-
-    opts->arg = addr;
-    opts->size_arg = sizeof(QPCIAddress);
+    qtest_qmp_device_add(driver, id, "'addr': '%d'%s%s", slot,
+                         opts ? ", " : "", opts ? opts : "");
 }

@@ -23,7 +23,9 @@
 #define TEST_IF(obj) \
      INTERFACE_CHECK(TestIf, (obj), TYPE_TEST_IF)
 
-typedef struct TestIf TestIf;
+typedef struct TestIf {
+    Object parent_obj;
+} TestIf;
 
 typedef struct TestIfClass {
     InterfaceClass parent_class;

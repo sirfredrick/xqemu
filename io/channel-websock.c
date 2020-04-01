@@ -163,7 +163,6 @@ qio_channel_websock_handshake_send_res(QIOChannelWebsock *ioc,
     responselen = strlen(response);
     buffer_reserve(&ioc->encoutput, responselen);
     buffer_append(&ioc->encoutput, response, responselen);
-    g_free(response);
     va_end(vargs);
 }
 
@@ -1225,17 +1224,11 @@ qio_channel_websock_source_check(GSource *source)
     QIOChannelWebsockSource *wsource = (QIOChannelWebsockSource *)source;
     GIOCondition cond = 0;
 
-    if (wsource->wioc->rawinput.offset) {
+    if (wsource->wioc->rawinput.offset || wsource->wioc->io_eof) {
         cond |= G_IO_IN;
     }
     if (wsource->wioc->encoutput.offset < QIO_CHANNEL_WEBSOCK_MAX_BUFFER) {
         cond |= G_IO_OUT;
-    }
-    if (wsource->wioc->io_eof) {
-        cond |= G_IO_HUP;
-    }
-    if (wsource->wioc->io_err) {
-        cond |= G_IO_ERR;
     }
 
     return cond & wsource->condition;

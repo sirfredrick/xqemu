@@ -6,22 +6,15 @@ QEMUGLContext qemu_egl_create_context(DisplayChangeListener *dcl,
                                       QEMUGLParams *params)
 {
    EGLContext ctx;
-   EGLint ctx_att_core[] = {
+   EGLint ctx_att[] = {
        EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
        EGL_CONTEXT_CLIENT_VERSION, params->major_ver,
        EGL_CONTEXT_MINOR_VERSION_KHR, params->minor_ver,
        EGL_NONE
    };
-   EGLint ctx_att_gles[] = {
-       EGL_CONTEXT_CLIENT_VERSION, params->major_ver,
-       EGL_CONTEXT_MINOR_VERSION_KHR, params->minor_ver,
-       EGL_NONE
-   };
-   bool gles = (qemu_egl_mode == DISPLAYGL_MODE_ES);
 
    ctx = eglCreateContext(qemu_egl_display, qemu_egl_config,
-                          eglGetCurrentContext(),
-                          gles ? ctx_att_gles : ctx_att_core);
+                          eglGetCurrentContext(), ctx_att);
    return ctx;
 }
 

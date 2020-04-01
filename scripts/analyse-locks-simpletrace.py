@@ -6,7 +6,7 @@
 # Author: Alex Bennée <alex.bennee@linaro.org>
 #
 
-from __future__ import print_function
+import os
 import simpletrace
 import argparse
 import numpy as np
@@ -77,7 +77,7 @@ if __name__ == '__main__':
 
     # Now dump the individual lock stats
     for key, val in sorted(analyser.mutex_records.iteritems(),
-                           key=lambda k_v: k_v[1]["locks"]):
+                           key=lambda (k,v): v["locks"]):
         print ("Lock: %#x locks: %d, locked: %d, unlocked: %d" %
                (key, val["locks"], val["locked"], val["unlocked"]))
 

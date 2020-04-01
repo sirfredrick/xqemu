@@ -15,6 +15,8 @@ __email__      = "stefanha@linux.vnet.ibm.com"
 
 import sys
 import getopt
+import os.path
+import re
 
 from tracetool import error_write, out
 import tracetool.backend

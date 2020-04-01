@@ -1,3 +1,5 @@
 # Default configuration for Xtensa
 
-include xtensa-softmmu.mak
+CONFIG_SERIAL=y
+CONFIG_OPENCORES_ETH=y
+CONFIG_PFLASH_CFI01=y

@@ -33,8 +33,4 @@ static inline void cpu_set_tls(CPUAlphaState *env, target_ulong newtls)
     env->unique = newtls;
 }
 
-static inline abi_ulong get_sp_from_cpustate(CPUAlphaState *state)
-{
-    return state->ir[IR_SP];
-}
 #endif

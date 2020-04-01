@@ -9,30 +9,33 @@
 
 #include "qemu/osdep.h"
 #include "libqtest.h"
-#include "libqos/virtio-serial.h"
+#include "libqos/virtio.h"
 
 /* Tests only initialization so far. TODO: Replace with functional tests */
-static void virtio_serial_nop(void *obj, void *data, QGuestAllocator *alloc)
+static void virtio_serial_nop(void)
 {
-    /* no operation */
 }
 
-static void serial_hotplug(void *obj, void *data, QGuestAllocator *alloc)
+static void hotplug(void)
 {
-    qtest_qmp_device_add("virtserialport", "hp-port", "{}");
+    qtest_qmp_device_add("virtserialport", "hp-port", NULL);
+
     qtest_qmp_device_del("hp-port");
 }
 
-static void register_virtio_serial_test(void)
+int main(int argc, char **argv)
 {
-    QOSGraphTestOptions opts = { };
+    int ret;
 
-    opts.edge.before_cmd_line = "-device virtconsole,bus=vser0.0";
-    qos_add_test("console-nop", "virtio-serial", virtio_serial_nop, &opts);
+    g_test_init(&argc, &argv, NULL);
+    qtest_add_func("/virtio/serial/nop", virtio_serial_nop);
+    qtest_add_func("/virtio/serial/hotplug", hotplug);
 
-    opts.edge.before_cmd_line = "-device virtserialport,bus=vser0.0";
-    qos_add_test("serialport-nop", "virtio-serial", virtio_serial_nop, &opts);
+    global_qtest = qtest_startf("-device virtio-serial-%s",
+                                qvirtio_get_dev_type());
+    ret = g_test_run();
 
-    qos_add_test("hotplug", "virtio-serial", serial_hotplug, NULL);
+    qtest_end();
+
+    return ret;
 }
-libqos_init(register_virtio_serial_test);

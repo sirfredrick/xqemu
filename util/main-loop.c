@@ -26,9 +26,11 @@
 #include "qapi/error.h"
 #include "qemu/cutils.h"
 #include "qemu/timer.h"
+#include "qemu/sockets.h"	// struct in_addr needed for libslirp.h
 #include "sysemu/qtest.h"
 #include "sysemu/cpus.h"
 #include "sysemu/replay.h"
+#include "slirp/libslirp.h"
 #include "qemu/main-loop.h"
 #include "block/aio.h"
 #include "qemu/error-report.h"
@@ -69,7 +71,7 @@ static void sigfd_handler(void *opaque)
     }
 }
 
-static int qemu_signal_init(Error **errp)
+static int qemu_signal_init(void)
 {
     int sigfd;
     sigset_t set;
@@ -94,7 +96,7 @@ static int qemu_signal_init(Error **errp)
     sigdelset(&set, SIG_IPI);
     sigfd = qemu_signalfd(&set);
     if (sigfd == -1) {
-        error_setg_errno(errp, errno, "failed to create signalfd");
+        fprintf(stderr, "failed to create signalfd\n");
         return -errno;
     }
 
@@ -107,7 +109,7 @@ static int qemu_signal_init(Error **errp)
 
 #else /* _WIN32 */
 
-static int qemu_signal_init(Error **errp)
+static int qemu_signal_init(void)
 {
     return 0;
 }
@@ -146,7 +148,7 @@ int qemu_init_main_loop(Error **errp)
 
     init_clocks(qemu_timer_notify_cb);
 
-    ret = qemu_signal_init(errp);
+    ret = qemu_signal_init();
     if (ret) {
         return ret;
     }
@@ -220,11 +222,36 @@ static int os_host_main_loop_wait(int64_t timeout)
 {
     GMainContext *context = g_main_context_default();
     int ret;
+    static int spin_counter;
 
     g_main_context_acquire(context);
 
     glib_pollfds_fill(&timeout);
 
+    /* If the I/O thread is very busy or we are incorrectly busy waiting in
+     * the I/O thread, this can lead to starvation of the BQL such that the
+     * VCPU threads never run.  To make sure we can detect the later case,
+     * print a message to the screen.  If we run into this condition, create
+     * a fake timeout in order to give the VCPU threads a chance to run.
+     */
+    if (!timeout && (spin_counter > MAX_MAIN_LOOP_SPIN)) {
+        static bool notified;
+
+        if (!notified && !qtest_enabled() && !qtest_driver()) {
+            warn_report("I/O thread spun for %d iterations",
+                        MAX_MAIN_LOOP_SPIN);
+            notified = true;
+        }
+
+        timeout = SCALE_MS;
+    }
+
+
+    if (timeout) {
+        spin_counter = 0;
+    } else {
+        spin_counter++;
+    }
     qemu_mutex_unlock_iothread();
     replay_mutex_unlock();
 
@@ -467,42 +494,25 @@ static int os_host_main_loop_wait(int64_t timeout)
 }
 #endif
 
-static NotifierList main_loop_poll_notifiers =
-    NOTIFIER_LIST_INITIALIZER(main_loop_poll_notifiers);
-
-void main_loop_poll_add_notifier(Notifier *notify)
-{
-    notifier_list_add(&main_loop_poll_notifiers, notify);
-}
-
-void main_loop_poll_remove_notifier(Notifier *notify)
-{
-    notifier_remove(notify);
-}
-
 void main_loop_wait(int nonblocking)
 {
-    MainLoopPoll mlpoll = {
-        .state = MAIN_LOOP_POLL_FILL,
-        .timeout = UINT32_MAX,
-        .pollfds = gpollfds,
-    };
     int ret;
+    uint32_t timeout = UINT32_MAX;
     int64_t timeout_ns;
 
     if (nonblocking) {
-        mlpoll.timeout = 0;
+        timeout = 0;
     }
 
     /* poll any events */
     g_array_set_size(gpollfds, 0); /* reset for new iteration */
     /* XXX: separate device handlers from system ones */
-    notifier_list_notify(&main_loop_poll_notifiers, &mlpoll);
+    slirp_pollfds_fill(gpollfds, &timeout);
 
-    if (mlpoll.timeout == UINT32_MAX) {
+    if (timeout == UINT32_MAX) {
         timeout_ns = -1;
     } else {
-        timeout_ns = (uint64_t)mlpoll.timeout * (int64_t)(SCALE_MS);
+        timeout_ns = (uint64_t)timeout * (int64_t)(SCALE_MS);
     }
 
     timeout_ns = qemu_soonest_timeout(timeout_ns,
@@ -510,8 +520,7 @@ void main_loop_wait(int nonblocking)
                                           &main_loop_tlg));
 
     ret = os_host_main_loop_wait(timeout_ns);
-    mlpoll.state = ret < 0 ? MAIN_LOOP_POLL_ERR : MAIN_LOOP_POLL_OK;
-    notifier_list_notify(&main_loop_poll_notifiers, &mlpoll);
+    slirp_pollfds_poll(gpollfds, (ret < 0));
 
     /* CPU thread can infinitely wait for event after
        missing the warp */

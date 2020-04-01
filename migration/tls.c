@@ -94,7 +94,7 @@ void migration_tls_channel_process_incoming(MigrationState *s,
 
     tioc = qio_channel_tls_new_server(
         ioc, creds,
-        s->parameters.tls_authz,
+        NULL, /* XXX pass ACL name */
         errp);
     if (!tioc) {
         return;

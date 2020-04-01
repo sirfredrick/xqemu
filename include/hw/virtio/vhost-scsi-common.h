@@ -35,7 +35,6 @@ typedef struct VHostSCSICommon {
     int channel;
     int target;
     int lun;
-    uint64_t host_features;
 } VHostSCSICommon;
 
 int vhost_scsi_common_start(VHostSCSICommon *vsc);

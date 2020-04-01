@@ -9,49 +9,23 @@
 
 #include "qemu/osdep.h"
 #include "libqtest.h"
-#include "libqos/qgraph.h"
-#include "libqos/pci.h"
 
-typedef struct QES1370 QES1370;
-
-struct QES1370 {
-    QOSGraphObject obj;
-    QPCIDevice dev;
-};
-
-static void *es1370_get_driver(void *obj, const char *interface)
+/* Tests only initialization so far. TODO: Replace with functional tests */
+static void nop(void)
 {
-    QES1370 *es1370 = obj;
-
-    if (!g_strcmp0(interface, "pci-device")) {
-        return &es1370->dev;
-    }
-
-    fprintf(stderr, "%s not present in e1000e\n", interface);
-    g_assert_not_reached();
 }
 
-static void *es1370_create(void *pci_bus, QGuestAllocator *alloc, void *addr)
+int main(int argc, char **argv)
 {
-    QES1370 *es1370 = g_new0(QES1370, 1);
-    QPCIBus *bus = pci_bus;
+    int ret;
 
-    qpci_device_init(&es1370->dev, bus, addr);
-    es1370->obj.get_driver = es1370_get_driver;
+    g_test_init(&argc, &argv, NULL);
+    qtest_add_func("/es1370/nop", nop);
 
-    return &es1370->obj;
+    qtest_start("-device ES1370");
+    ret = g_test_run();
+
+    qtest_end();
+
+    return ret;
 }
-
-static void es1370_register_nodes(void)
-{
-    QOSGraphEdgeOptions opts = {
-        .extra_device_opts = "addr=04.0",
-    };
-    add_qpci_address(&opts, &(QPCIAddress) { .devfn = QPCI_DEVFN(4, 0) });
-
-    qos_node_create_driver("ES1370", es1370_create);
-    qos_node_consumes("ES1370", "pci-bus", &opts);
-    qos_node_produces("ES1370", "pci-device");
-}
-
-libqos_init(es1370_register_nodes);

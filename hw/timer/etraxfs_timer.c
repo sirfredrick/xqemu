@@ -315,10 +315,9 @@ static void etraxfs_timer_reset(void *opaque)
     qemu_irq_lower(t->irq);
 }
 
-static void etraxfs_timer_realize(DeviceState *dev, Error **errp)
+static int etraxfs_timer_init(SysBusDevice *dev)
 {
     ETRAXTimerState *t = ETRAX_TIMER(dev);
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
 
     t->bh_t0 = qemu_bh_new(timer0_hit, t);
     t->bh_t1 = qemu_bh_new(timer1_hit, t);
@@ -327,20 +326,21 @@ static void etraxfs_timer_realize(DeviceState *dev, Error **errp)
     t->ptimer_t1 = ptimer_init(t->bh_t1, PTIMER_POLICY_DEFAULT);
     t->ptimer_wd = ptimer_init(t->bh_wd, PTIMER_POLICY_DEFAULT);
 
-    sysbus_init_irq(sbd, &t->irq);
-    sysbus_init_irq(sbd, &t->nmi);
+    sysbus_init_irq(dev, &t->irq);
+    sysbus_init_irq(dev, &t->nmi);
 
     memory_region_init_io(&t->mmio, OBJECT(t), &timer_ops, t,
                           "etraxfs-timer", 0x5c);
-    sysbus_init_mmio(sbd, &t->mmio);
+    sysbus_init_mmio(dev, &t->mmio);
     qemu_register_reset(etraxfs_timer_reset, t);
+    return 0;
 }
 
 static void etraxfs_timer_class_init(ObjectClass *klass, void *data)
 {
-    DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
 
-    dc->realize = etraxfs_timer_realize;
+    sdc->init = etraxfs_timer_init;
 }
 
 static const TypeInfo etraxfs_timer_info = {

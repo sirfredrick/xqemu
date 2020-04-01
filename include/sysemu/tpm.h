@@ -16,7 +16,7 @@
 #include "qom/object.h"
 
 int tpm_config_parse(QemuOptsList *opts_list, const char *optarg);
-void tpm_init(void);
+int tpm_init(void);
 void tpm_cleanup(void);
 
 typedef enum TPMVersion {
@@ -33,7 +33,9 @@ typedef enum TPMVersion {
 #define TPM_IF(obj)                             \
     INTERFACE_CHECK(TPMIf, (obj), TYPE_TPM_IF)
 
-typedef struct TPMIf TPMIf;
+typedef struct TPMIf {
+    Object parent_obj;
+} TPMIf;
 
 typedef struct TPMIfClass {
     InterfaceClass parent_class;

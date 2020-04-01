@@ -103,6 +103,10 @@ void error_setg_errno_internal(Error **errp,
     va_list ap;
     int saved_errno = errno;
 
+    if (errp == NULL) {
+        return;
+    }
+
     va_start(ap, fmt);
     error_setv(errp, src, line, func, ERROR_CLASS_GENERIC_ERROR, fmt, ap,
                os_errno != 0 ? strerror(os_errno) : NULL);
@@ -287,17 +291,4 @@ void error_propagate(Error **dst_errp, Error *local_err)
     } else {
         error_free(local_err);
     }
-}
-
-void error_propagate_prepend(Error **dst_errp, Error *err,
-                             const char *fmt, ...)
-{
-    va_list ap;
-
-    if (dst_errp && !*dst_errp) {
-        va_start(ap, fmt);
-        error_vprepend(&err, fmt, ap);
-        va_end(ap);
-    } /* else error is being ignored, don't bother with prepending */
-    error_propagate(dst_errp, err);
 }

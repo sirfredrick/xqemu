@@ -3,44 +3,30 @@
  *
  * Copyright (c) 2011 espes
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 or
+ * (at your option) version 3 of the License.
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "qemu/osdep.h"
 #include "qemu/option.h"
 #include "hw/hw.h"
 #include "hw/i2c/i2c.h"
-#include "hw/i2c/smbus_slave.h"
+#include "hw/i2c/smbus.h"
 #include "qemu/config-file.h"
-#include "qapi/error.h"
 #include "sysemu/sysemu.h"
 #include "smbus.h"
 
-#define TYPE_XBOX_SMC "smbus-xbox-smc"
-#define XBOX_SMC(obj) OBJECT_CHECK(SMBusSMCDevice, (obj), TYPE_XBOX_SMC)
-
-// #define DEBUG
-#ifdef DEBUG
-# define DPRINTF(format, ...) printf(format, ## __VA_ARGS__)
-#else
-# define DPRINTF(format, ...) do { } while (0)
-#endif
+//#define DEBUG
 
 /*
  * Hardware is a PIC16LC
@@ -56,11 +42,10 @@
 #define SMC_REG_AVPACK              0x04
 #define     SMC_REG_AVPACK_SCART        0x00
 #define     SMC_REG_AVPACK_HDTV         0x01
-#define     SMC_REG_AVPACK_VGA          0x02
-#define     SMC_REG_AVPACK_RFU          0x03
+#define     SMC_REG_AVPACK_VGA_SOG      0x02
 #define     SMC_REG_AVPACK_SVIDEO       0x04
 #define     SMC_REG_AVPACK_COMPOSITE    0x06
-#define     SMC_REG_AVPACK_NONE         0x07
+#define     SMC_REG_AVPACK_VGA          0x07
 #define SMC_REG_FANMODE             0x05
 #define SMC_REG_FANSPEED            0x06
 #define SMC_REG_LEDMODE             0x07
@@ -87,29 +72,40 @@ static const char *smc_version_string = "P01";
 typedef struct SMBusSMCDevice {
     SMBusDevice smbusdev;
     int version_string_index;
-    uint8_t cmd;
-    uint8_t avpack_reg;
     uint8_t scratch_reg;
 } SMBusSMCDevice;
 
 static void smc_quick_cmd(SMBusDevice *dev, uint8_t read)
 {
-    DPRINTF("smc_quick_cmd: addr=0x%02x read=%d\n", dev->i2c.address, read);
+#ifdef DEBUG
+    printf("smc_quick_cmd: addr=0x%02x read=%d\n", dev->i2c.address, read);
+#endif
 }
 
-static int smc_write_data(SMBusDevice *dev, uint8_t *buf, uint8_t len)
+static void smc_send_byte(SMBusDevice *dev, uint8_t val)
 {
-    SMBusSMCDevice *smc = XBOX_SMC(dev);
+#ifdef DEBUG
+    printf("smc_send_byte: addr=0x%02x val=0x%02x\n",
+           dev->i2c.address, val);
+#endif
+}
 
-    smc->cmd = buf[0];
-    uint8_t cmd = smc->cmd;
-    buf++;
-    len--;
+static uint8_t smc_receive_byte(SMBusDevice *dev)
+{
+#ifdef DEBUG
+    printf("smc_receive_byte: addr=0x%02x\n",
+           dev->i2c.address);
+#endif
+    return 0;
+}
 
-    if (len < 1) return 0;
-
-    DPRINTF("smc_write_byte: addr=0x%02x cmd=0x%02x val=0x%02x\n",
+static void smc_write_data(SMBusDevice *dev, uint8_t cmd, uint8_t *buf, int len)
+{
+    SMBusSMCDevice *smc = (SMBusSMCDevice *) dev;
+#ifdef DEBUG
+    printf("smc_write_byte: addr=0x%02x cmd=0x%02x val=0x%02x\n",
            dev->i2c.address, cmd, buf[0]);
+#endif
 
     switch (cmd) {
     case SMC_REG_VER:
@@ -139,17 +135,15 @@ static int smc_write_data(SMBusDevice *dev, uint8_t *buf, uint8_t len)
     default:
         break;
     }
-
-    return 0;
 }
 
-static uint8_t smc_receive_byte(SMBusDevice *dev)
+static uint8_t smc_read_data(SMBusDevice *dev, uint8_t cmd, int n)
 {
-    SMBusSMCDevice *smc = XBOX_SMC(dev);
-    DPRINTF("smc_receive_byte: addr=0x%02x cmd=0x%02x\n",
-            dev->i2c.address, smc->cmd);
-
-    uint8_t cmd = smc->cmd++;
+    SMBusSMCDevice *smc = (SMBusSMCDevice *) dev;
+    #ifdef DEBUG
+        printf("smc_read_data: addr=0x%02x cmd=0x%02x n=%d\n",
+               dev->i2c.address, cmd, n);
+    #endif
 
     switch (cmd) {
     case SMC_REG_VER:
@@ -157,7 +151,8 @@ static uint8_t smc_receive_byte(SMBusDevice *dev)
             smc->version_string_index++ % (sizeof(smc_version_string) - 1)];
 
     case SMC_REG_AVPACK:
-        return smc->avpack_reg;
+        /* pretend to have a composite av pack plugged in */
+        return SMC_REG_AVPACK_COMPOSITE;
 
     case SMC_REG_SCRATCH:
         return smc->scratch_reg;
@@ -180,77 +175,34 @@ static uint8_t smc_receive_byte(SMBusDevice *dev)
     return 0;
 }
 
-bool xbox_smc_avpack_to_reg(const char *avpack, uint8_t *value)
+static int smbus_smc_init(SMBusDevice *dev)
 {
-    uint8_t r;
-
-    if (!strcmp(avpack, "composite")) {
-        r = SMC_REG_AVPACK_COMPOSITE;
-    } else if (!strcmp(avpack, "scart")) {
-        r = SMC_REG_AVPACK_SCART;
-    } else if (!strcmp(avpack, "svideo")) {
-        r = SMC_REG_AVPACK_SVIDEO;
-    } else if (!strcmp(avpack, "vga")) {
-        r = SMC_REG_AVPACK_VGA;
-    } else if (!strcmp(avpack, "rfu")) {
-        r = SMC_REG_AVPACK_RFU;
-    } else if (!strcmp(avpack, "hdtv")) {
-        r = SMC_REG_AVPACK_HDTV;
-    } else if (!strcmp(avpack, "none")) {
-        r = SMC_REG_AVPACK_NONE;
-    } else {
-        return false;
-    }
-
-    if (value) {
-        *value = r;
-    }
-    return true;
-}
-
-void xbox_smc_append_avpack_hint(Error **errp)
-{
-    error_append_hint(errp, "Valid options are: composite (default), scart, svideo, vga, rfu, hdtv, none\n");
-}
-
-static void smbus_smc_realize(DeviceState *dev, Error **errp)
-{
-    SMBusSMCDevice *smc = XBOX_SMC(dev);
-    char *avpack;
+    SMBusSMCDevice *smc = (SMBusSMCDevice *)dev;
 
     smc->version_string_index = 0;
-    smc->avpack_reg = 0; /* Default value for Chihiro machine */
     smc->scratch_reg = 0;
-    smc->cmd = 0;
 
     if (object_property_get_bool(qdev_get_machine(), "short-animation", NULL)) {
         smc->scratch_reg = SMC_REG_SCRATCH_SHORT_ANIMATION;
     }
 
-    avpack = object_property_get_str(qdev_get_machine(), "avpack", NULL);
-    if (avpack) {
-        if (!xbox_smc_avpack_to_reg(avpack, &smc->avpack_reg)) {
-            error_setg(errp, "Unsupported avpack option '%s'", avpack);
-            xbox_smc_append_avpack_hint(errp);
-        }
-
-        g_free(avpack);
-    }
+    return 0;
 }
 
 static void smbus_smc_class_initfn(ObjectClass *klass, void *data)
 {
-    DeviceClass *dc = DEVICE_CLASS(klass);
     SMBusDeviceClass *sc = SMBUS_DEVICE_CLASS(klass);
 
-    dc->realize = smbus_smc_realize;
+    sc->init = smbus_smc_init;
     sc->quick_cmd = smc_quick_cmd;
+    sc->send_byte = smc_send_byte;
     sc->receive_byte = smc_receive_byte;
     sc->write_data = smc_write_data;
+    sc->read_data = smc_read_data;
 }
 
 static TypeInfo smbus_smc_info = {
-    .name = TYPE_XBOX_SMC,
+    .name = "smbus-xbox-smc",
     .parent = TYPE_SMBUS_DEVICE,
     .instance_size = sizeof(SMBusSMCDevice),
     .class_init = smbus_smc_class_initfn,
@@ -266,7 +218,7 @@ type_init(smbus_smc_register_devices)
 void smbus_xbox_smc_init(I2CBus *smbus, int address)
 {
     DeviceState *smc;
-    smc = qdev_create((BusState *)smbus, TYPE_XBOX_SMC);
+    smc = qdev_create((BusState *)smbus, "smbus-xbox-smc");
     qdev_prop_set_uint8(smc, "address", address);
     qdev_init_nofail(smc);
 }

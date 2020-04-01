@@ -32,7 +32,7 @@
  * -kernel /home/lmr/Code/virt-test.git/kvm/unittests/msr.flat
  *
  * Where msr.flat is one of the KVM unittests, present on a separate repo,
- * https://git.kernel.org/pub/scm/virt/kvm/kvm-unit-tests.git
+ * git://git.kernel.org/pub/scm/virt/kvm/kvm-unit-tests.git
 */
 
 #include "qemu/osdep.h"
@@ -58,12 +58,7 @@ typedef struct PCTestdev {
 #define TESTDEV(obj) \
      OBJECT_CHECK(PCTestdev, (obj), TYPE_TESTDEV)
 
-static uint64_t test_irq_line_read(void *opaque, hwaddr addr, unsigned size)
-{
-    return 0;
-}
-
-static void test_irq_line_write(void *opaque, hwaddr addr, uint64_t data,
+static void test_irq_line(void *opaque, hwaddr addr, uint64_t data,
                           unsigned len)
 {
     PCTestdev *dev = opaque;
@@ -73,8 +68,7 @@ static void test_irq_line_write(void *opaque, hwaddr addr, uint64_t data,
 }
 
 static const MemoryRegionOps test_irq_ops = {
-    .read = test_irq_line_read,
-    .write = test_irq_line_write,
+    .write = test_irq_line,
     .valid.min_access_size = 1,
     .valid.max_access_size = 1,
     .endianness = DEVICE_LITTLE_ENDIAN,
@@ -116,12 +110,7 @@ static const MemoryRegionOps test_ioport_byte_ops = {
     .endianness = DEVICE_LITTLE_ENDIAN,
 };
 
-static uint64_t test_flush_page_read(void *opaque, hwaddr addr, unsigned size)
-{
-    return 0;
-}
-
-static void test_flush_page_write(void *opaque, hwaddr addr, uint64_t data,
+static void test_flush_page(void *opaque, hwaddr addr, uint64_t data,
                             unsigned len)
 {
     hwaddr page = 4096;
@@ -137,8 +126,7 @@ static void test_flush_page_write(void *opaque, hwaddr addr, uint64_t data,
 }
 
 static const MemoryRegionOps test_flush_ops = {
-    .read = test_flush_page_read,
-    .write = test_flush_page_write,
+    .write = test_flush_page,
     .valid.min_access_size = 4,
     .valid.max_access_size = 4,
     .endianness = DEVICE_LITTLE_ENDIAN,

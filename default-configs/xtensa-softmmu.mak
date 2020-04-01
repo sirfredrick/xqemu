@@ -1,6 +1,5 @@
 # Default configuration for Xtensa
 
-# Boards:
-#
-CONFIG_XTENSA_SIM=y
-CONFIG_XTENSA_XTFPGA=y
+CONFIG_SERIAL=y
+CONFIG_OPENCORES_ETH=y
+CONFIG_PFLASH_CFI01=y

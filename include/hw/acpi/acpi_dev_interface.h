@@ -25,7 +25,11 @@ typedef enum {
      INTERFACE_CHECK(AcpiDeviceIf, (obj), \
                      TYPE_ACPI_DEVICE_IF)
 
-typedef struct AcpiDeviceIf AcpiDeviceIf;
+
+typedef struct AcpiDeviceIf {
+    /* <private> */
+    Object Parent;
+} AcpiDeviceIf;
 
 void acpi_send_event(DeviceState *dev, AcpiEventStatusBits event);
 

@@ -6,9 +6,6 @@ and Linux. Please visit [xqemu.com](http://xqemu.com) to learn more.
 
 Build Status
 ------------
-
-| Platform | Build Status |
-|----------|--------------|
-| Windows | [![Build status](https://github.com/xqemu/xqemu/workflows/Build%20(Windows)/badge.svg?branch=master)](https://github.com/xqemu/xqemu/actions?query=branch%3Amaster) |
-| macOS | [![Build status](https://github.com/xqemu/xqemu/workflows/Build%20(macOS)/badge.svg?branch=master)](https://github.com/xqemu/xqemu/actions?query=branch%3Amaster) |
-| Ubuntu | [![Build status](https://github.com/xqemu/xqemu/workflows/Build%20(Ubuntu)/badge.svg?branch=master)](https://github.com/xqemu/xqemu/actions?query=branch%3Amaster) |
+| Windows | Linux | macOS |
+| ------- | ----- | ----- |
+| [![Build status](https://ci.appveyor.com/api/projects/status/8rbaimmbp6k44rab?svg=true)](https://ci.appveyor.com/project/mborgerson/xqemu-c5j6o) | [![Travis-CI Status](https://travis-ci.org/xqemu/xqemu.svg?branch=master)](https://travis-ci.org/xqemu/xqemu) | [![Travis-CI Status](https://travis-ci.org/xqemu/xqemu.svg?branch=master)](https://travis-ci.org/xqemu/xqemu) |

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Test cases for different refcount_bits values
 #
@@ -24,6 +24,7 @@ owner=mreitz@redhat.com
 seq="$(basename $0)"
 echo "QA output created by $seq"
 
+here="$PWD"
 status=1	# failure is the default!
 
 _cleanup()
@@ -44,7 +45,7 @@ _supported_os Linux
 # manual setting; compat will be overridden as well
 _unsupported_imgopts refcount_bits 'compat=0.10'
 
-print_refcount_bits()
+function print_refcount_bits()
 {
     $QEMU_IMG info "$TEST_IMG" | sed -n '/refcount bits:/ s/^ *//p'
 }

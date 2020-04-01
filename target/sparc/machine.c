@@ -56,8 +56,7 @@ static const VMStateDescription vmstate_tlb_entry = {
 };
 #endif
 
-static int get_psr(QEMUFile *f, void *opaque, size_t size,
-                   const VMStateField *field)
+static int get_psr(QEMUFile *f, void *opaque, size_t size, VMStateField *field)
 {
     SPARCCPU *cpu = opaque;
     CPUSPARCState *env = &cpu->env;
@@ -70,8 +69,8 @@ static int get_psr(QEMUFile *f, void *opaque, size_t size,
     return 0;
 }
 
-static int put_psr(QEMUFile *f, void *opaque, size_t size,
-                   const VMStateField *field, QJSON *vmdesc)
+static int put_psr(QEMUFile *f, void *opaque, size_t size, VMStateField *field,
+                   QJSON *vmdesc)
 {
     SPARCCPU *cpu = opaque;
     CPUSPARCState *env = &cpu->env;

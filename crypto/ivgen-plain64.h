@@ -18,7 +18,7 @@
  *
  */
 
-#include "ivgenpriv.h"
+#include "crypto/ivgenpriv.h"
 
 #ifndef QCRYPTO_IVGEN_PLAIN64_H__
 #define QCRYPTO_IVGEN_PLAIN64_H__

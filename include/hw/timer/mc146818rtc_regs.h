@@ -48,7 +48,6 @@
 /* PC cmos mappings */
 #define RTC_CENTURY              0x32
 #define RTC_IBM_PS2_CENTURY_BYTE 0x37
-#define RTC_XBOX_CENTURY 0x7f
 
 #define REG_A_UIP 0x80
 

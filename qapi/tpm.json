@@ -76,9 +76,8 @@
 #
 # Since: 1.5
 ##
-{ 'struct': 'TPMPassthroughOptions',
-  'data': { '*path': 'str',
-            '*cancel-path': 'str' } }
+{ 'struct': 'TPMPassthroughOptions', 'data': { '*path' : 'str',
+                                             '*cancel-path' : 'str'} }
 
 ##
 # @TPMEmulatorOptions:

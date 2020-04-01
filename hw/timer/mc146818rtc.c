@@ -31,10 +31,9 @@
 #include "sysemu/replay.h"
 #include "hw/timer/mc146818rtc.h"
 #include "qapi/error.h"
-#include "qapi/qapi-commands-target.h"
-#include "qapi/qapi-events-target.h"
+#include "qapi/qapi-commands-misc.h"
+#include "qapi/qapi-events-misc.h"
 #include "qapi/visitor.h"
-#include "exec/address-spaces.h"
 
 #ifdef TARGET_I386
 #include "hw/i386/apic.h"
@@ -71,8 +70,7 @@ typedef struct RTCState {
     ISADevice parent_obj;
 
     MemoryRegion io;
-    MemoryRegion coalesced_io;
-    uint8_t cmos_data[256];
+    uint8_t cmos_data[128];
     uint8_t cmos_index;
     int32_t base_year;
     uint64_t base_rtc;
@@ -122,7 +120,7 @@ static void rtc_coalesced_timer_update(RTCState *s)
         timer_del(s->coalesced_timer);
     } else {
         /* divide each RTC interval to 2 - 8 smaller intervals */
-        int c = MIN(s->irq_coalesced, 7) + 1;
+        int c = MIN(s->irq_coalesced, 7) + 1; 
         int64_t next_clock = qemu_clock_get_ns(rtc_clock) +
             periodic_clock_to_ns(s->period / c);
         timer_mod(s->coalesced_timer, next_clock);
@@ -455,7 +453,7 @@ static void rtc_update_timer(void *opaque)
     if (qemu_clock_get_ns(rtc_clock) >= s->next_alarm_time) {
         irqs |= REG_C_AF;
         if (s->cmos_data[RTC_REG_B] & REG_B_AIE) {
-            qemu_system_wakeup_request(QEMU_WAKEUP_REASON_RTC, NULL);
+            qemu_system_wakeup_request(QEMU_WAKEUP_REASON_RTC);
         }
     }
 
@@ -475,10 +473,8 @@ static void cmos_ioport_write(void *opaque, hwaddr addr,
     uint32_t old_period;
     bool update_periodic_timer;
 
-    if (addr == 0) {
+    if ((addr & 1) == 0) {
         s->cmos_index = data & 0x7f;
-    } else if (addr == 2) {
-        s->cmos_index = data;
     } else {
         CMOS_DPRINTF("cmos: write index=0x%02x val=0x%02" PRIx64 "\n",
                      s->cmos_index, data);
@@ -489,14 +485,10 @@ static void cmos_ioport_write(void *opaque, hwaddr addr,
             s->cmos_data[s->cmos_index] = data;
             check_update_timer(s);
             break;
-#ifdef XBOX
-        case RTC_XBOX_CENTURY:
-#else
-        case RTC_IBM_PS2_CENTURY_BYTE:
+	case RTC_IBM_PS2_CENTURY_BYTE:
             s->cmos_index = RTC_CENTURY;
             /* fall through */
         case RTC_CENTURY:
-#endif
         case RTC_SECONDS:
         case RTC_MINUTES:
         case RTC_HOURS:
@@ -632,11 +624,7 @@ static void rtc_get_time(RTCState *s, struct tm *tm)
     tm->tm_mon = rtc_from_bcd(s, s->cmos_data[RTC_MONTH]) - 1;
     tm->tm_year =
         rtc_from_bcd(s, s->cmos_data[RTC_YEAR]) + s->base_year +
-#ifdef XBOX
-        rtc_from_bcd(s, s->cmos_data[RTC_XBOX_CENTURY]) * 100 - 1900;
-#else
         rtc_from_bcd(s, s->cmos_data[RTC_CENTURY]) * 100 - 1900;
-#endif
 }
 
 static void rtc_set_time(RTCState *s)
@@ -647,7 +635,7 @@ static void rtc_set_time(RTCState *s)
     s->base_rtc = mktimegm(&tm);
     s->last_update = qemu_clock_get_ns(rtc_clock);
 
-    qapi_event_send_rtc_change(qemu_timedate_diff(&tm));
+    qapi_event_send_rtc_change(qemu_timedate_diff(&tm), &error_abort);
 }
 
 static void rtc_set_cmos(RTCState *s, const struct tm *tm)
@@ -671,11 +659,7 @@ static void rtc_set_cmos(RTCState *s, const struct tm *tm)
     s->cmos_data[RTC_MONTH] = rtc_to_bcd(s, tm->tm_mon + 1);
     year = tm->tm_year + 1900 - s->base_year;
     s->cmos_data[RTC_YEAR] = rtc_to_bcd(s, year % 100);
-#ifdef XBOX
-    s->cmos_data[RTC_XBOX_CENTURY] = rtc_to_bcd(s, year / 100);
-#else
     s->cmos_data[RTC_CENTURY] = rtc_to_bcd(s, year / 100);
-#endif
 }
 
 static void rtc_update_time(RTCState *s)
@@ -729,14 +713,10 @@ static uint64_t cmos_ioport_read(void *opaque, hwaddr addr,
         return 0xff;
     } else {
         switch(s->cmos_index) {
-#ifdef XBOX
-        case RTC_XBOX_CENTURY:
-#else
-        case RTC_IBM_PS2_CENTURY_BYTE:
+	case RTC_IBM_PS2_CENTURY_BYTE:
             s->cmos_index = RTC_CENTURY;
             /* fall through */
         case RTC_CENTURY:
-#endif
         case RTC_SECONDS:
         case RTC_MINUTES:
         case RTC_HOURS:
@@ -791,14 +771,14 @@ static uint64_t cmos_ioport_read(void *opaque, hwaddr addr,
 void rtc_set_memory(ISADevice *dev, int addr, int val)
 {
     RTCState *s = MC146818_RTC(dev);
-    if (addr >= 0 && addr < sizeof(s->cmos_data))
+    if (addr >= 0 && addr <= 127)
         s->cmos_data[addr] = val;
 }
 
 int rtc_get_memory(ISADevice *dev, int addr)
 {
     RTCState *s = MC146818_RTC(dev);
-    assert(addr >= 0 && addr < sizeof(s->cmos_data));
+    assert(addr >= 0 && addr <= 127);
     return s->cmos_data[addr];
 }
 
@@ -935,7 +915,7 @@ static void rtc_reset(void *opaque)
 
     if (s->lost_tick_policy == LOST_TICK_POLICY_SLEW) {
         s->irq_coalesced = 0;
-        s->irq_reinject_on_ack_count = 0;
+        s->irq_reinject_on_ack_count = 0;		
     }
 }
 
@@ -1007,20 +987,16 @@ static void rtc_realizefn(DeviceState *dev, Error **errp)
     s->suspend_notifier.notify = rtc_notify_suspend;
     qemu_register_suspend_notifier(&s->suspend_notifier);
 
-    memory_region_init_io(&s->io, OBJECT(s), &cmos_ops, s, "rtc", 4);
+    memory_region_init_io(&s->io, OBJECT(s), &cmos_ops, s, "rtc", 2);
     isa_register_ioport(isadev, &s->io, base);
-
-    /* register rtc 0x70 port for coalesced_pio */
-    memory_region_set_flush_coalesced(&s->io);
-    memory_region_init_io(&s->coalesced_io, OBJECT(s), &cmos_ops,
-                          s, "rtc-index", 1);
-    memory_region_add_subregion(&s->io, 0, &s->coalesced_io);
-    memory_region_add_coalescing(&s->coalesced_io, 0, 1);
 
     qdev_set_legacy_instance_id(dev, base, 3);
     qemu_register_reset(rtc_reset, s);
 
     object_property_add_tm(OBJECT(s), "date", rtc_get_date, NULL);
+
+    object_property_add_alias(qdev_get_machine(), "rtc-time",
+                              OBJECT(s), "date", NULL);
 
     qdev_init_gpio_out(dev, &s->irq, 1);
 }
@@ -1042,9 +1018,6 @@ ISADevice *mc146818_rtc_init(ISABus *bus, int base_year, qemu_irq intercept_irq)
         isa_connect_gpio_out(isadev, 0, RTC_ISA_IRQ);
     }
     QLIST_INSERT_HEAD(&rtc_devices, s, link);
-
-    object_property_add_alias(qdev_get_machine(), "rtc-time", OBJECT(s),
-                              "date", NULL);
 
     return isadev;
 }
@@ -1079,11 +1052,17 @@ static void rtc_class_initfn(ObjectClass *klass, void *data)
     dc->user_creatable = false;
 }
 
+static void rtc_finalize(Object *obj)
+{
+    object_property_del(qdev_get_machine(), "rtc", NULL);
+}
+
 static const TypeInfo mc146818rtc_info = {
     .name          = TYPE_MC146818_RTC,
     .parent        = TYPE_ISA_DEVICE,
     .instance_size = sizeof(RTCState),
     .class_init    = rtc_class_initfn,
+    .instance_finalize = rtc_finalize,
 };
 
 static void mc146818rtc_register_types(void)

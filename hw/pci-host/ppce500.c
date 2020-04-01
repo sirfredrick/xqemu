@@ -436,9 +436,8 @@ static AddressSpace *e500_pcihost_set_iommu(PCIBus *bus, void *opaque,
     return &s->bm_as;
 }
 
-static void e500_pcihost_realize(DeviceState *dev, Error **errp)
+static int e500_pcihost_initfn(SysBusDevice *dev)
 {
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
     PCIHostState *h;
     PPCE500PCIState *s;
     PCIBus *b;
@@ -448,7 +447,7 @@ static void e500_pcihost_realize(DeviceState *dev, Error **errp)
     s = PPC_E500_PCI_HOST_BRIDGE(dev);
 
     for (i = 0; i < ARRAY_SIZE(s->irq); i++) {
-        sysbus_init_irq(sbd, &s->irq[i]);
+        sysbus_init_irq(dev, &s->irq[i]);
     }
 
     for (i = 0; i < PCI_NUM_PINS; i++) {
@@ -461,7 +460,7 @@ static void e500_pcihost_realize(DeviceState *dev, Error **errp)
     /* PIO lives at the bottom of our bus space */
     memory_region_add_subregion_overlap(&s->busmem, 0, &s->pio, -2);
 
-    b = pci_register_root_bus(dev, NULL, mpc85xx_pci_set_irq,
+    b = pci_register_root_bus(DEVICE(dev), NULL, mpc85xx_pci_set_irq,
                               mpc85xx_pci_map_irq, s, &s->busmem, &s->pio,
                               PCI_DEVFN(s->first_slot, 0), 4, TYPE_PCI_BUS);
     h->bus = b;
@@ -484,8 +483,10 @@ static void e500_pcihost_realize(DeviceState *dev, Error **errp)
     memory_region_add_subregion(&s->container, PCIE500_CFGADDR, &h->conf_mem);
     memory_region_add_subregion(&s->container, PCIE500_CFGDATA, &h->data_mem);
     memory_region_add_subregion(&s->container, PCIE500_REG_BASE, &s->iomem);
-    sysbus_init_mmio(sbd, &s->container);
+    sysbus_init_mmio(dev, &s->container);
     pci_bus_set_route_irq_fn(b, e500_route_intx_pin_to_irq);
+
+    return 0;
 }
 
 static void e500_host_bridge_class_init(ObjectClass *klass, void *data)
@@ -525,8 +526,9 @@ static Property pcihost_properties[] = {
 static void e500_pcihost_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
 
-    dc->realize = e500_pcihost_realize;
+    k->init = e500_pcihost_initfn;
     set_bit(DEVICE_CATEGORY_BRIDGE, dc->categories);
     dc->props = pcihost_properties;
     dc->vmsd = &vmstate_ppce500_pci;

@@ -57,10 +57,8 @@ typedef struct RAMList {
 extern RAMList ram_list;
 
 /* Should be holding either ram_list.mutex, or the RCU lock. */
-#define  INTERNAL_RAMBLOCK_FOREACH(block)  \
+#define  RAMBLOCK_FOREACH(block)  \
     QLIST_FOREACH_RCU(block, &ram_list.blocks, next)
-/* Never use the INTERNAL_ version except for defining other macros */
-#define RAMBLOCK_FOREACH(block) INTERNAL_RAMBLOCK_FOREACH(block)
 
 void qemu_mutex_lock_ramlist(void);
 void qemu_mutex_unlock_ramlist(void);

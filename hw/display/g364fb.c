@@ -18,7 +18,6 @@
  */
 
 #include "qemu/osdep.h"
-#include "qemu/units.h"
 #include "hw/hw.h"
 #include "qemu/error-report.h"
 #include "ui/console.h"
@@ -229,7 +228,7 @@ static void g364fb_draw_blank(G364State *s)
         d += surface_stride(surface);
     }
 
-    dpy_gfx_update_full(s->con);
+    dpy_gfx_update(s->con, 0, 0, s->width, s->height);
     s->blanked = 1;
 }
 
@@ -489,16 +488,18 @@ typedef struct {
     G364State g364;
 } G364SysBusState;
 
-static void g364fb_sysbus_realize(DeviceState *dev, Error **errp)
+static int g364fb_sysbus_init(SysBusDevice *sbd)
 {
+    DeviceState *dev = DEVICE(sbd);
     G364SysBusState *sbs = G364(dev);
     G364State *s = &sbs->g364;
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
 
     g364fb_init(dev, s);
     sysbus_init_irq(sbd, &s->irq);
     sysbus_init_mmio(sbd, &s->mem_ctrl);
     sysbus_init_mmio(sbd, &s->mem_vram);
+
+    return 0;
 }
 
 static void g364fb_sysbus_reset(DeviceState *d)
@@ -509,15 +510,17 @@ static void g364fb_sysbus_reset(DeviceState *d)
 }
 
 static Property g364fb_sysbus_properties[] = {
-    DEFINE_PROP_UINT32("vram_size", G364SysBusState, g364.vram_size, 8 * MiB),
+    DEFINE_PROP_UINT32("vram_size", G364SysBusState, g364.vram_size,
+    8 * 1024 * 1024),
     DEFINE_PROP_END_OF_LIST(),
 };
 
 static void g364fb_sysbus_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
 
-    dc->realize = g364fb_sysbus_realize;
+    k->init = g364fb_sysbus_init;
     set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
     dc->desc = "G364 framebuffer";
     dc->reset = g364fb_sysbus_reset;

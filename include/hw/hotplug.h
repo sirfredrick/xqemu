@@ -23,7 +23,11 @@
 #define HOTPLUG_HANDLER(obj) \
      INTERFACE_CHECK(HotplugHandler, (obj), TYPE_HOTPLUG_HANDLER)
 
-typedef struct HotplugHandler HotplugHandler;
+
+typedef struct HotplugHandler {
+    /* <private> */
+    Object Parent;
+} HotplugHandler;
 
 /**
  * hotplug_fn:

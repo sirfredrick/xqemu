@@ -17,7 +17,22 @@
  */
 #define SPAPR_MIN_SIZE 0x10000000
 
-void spapr_alloc_init(QGuestAllocator *s, QTestState *qts, QAllocOpts flags)
+void spapr_alloc_uninit(QGuestAllocator *allocator)
 {
-    alloc_init(s, flags, 1 << 20, SPAPR_MIN_SIZE, PAGE_SIZE);
+    alloc_uninit(allocator);
+}
+
+QGuestAllocator *spapr_alloc_init_flags(QTestState *qts, QAllocOpts flags)
+{
+    QGuestAllocator *s;
+
+    s = alloc_init_flags(flags, 1 << 20, SPAPR_MIN_SIZE);
+    alloc_set_page_size(s, PAGE_SIZE);
+
+    return s;
+}
+
+QGuestAllocator *spapr_alloc_init(void)
+{
+    return spapr_alloc_init_flags(NULL, ALLOC_NO_FLAGS);
 }

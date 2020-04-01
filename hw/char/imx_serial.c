@@ -74,9 +74,8 @@ static void imx_update(IMXSerialState *s)
     mask = (s->ucr1 & UCR1_TXMPTYEN) ? USR2_TXFE : 0;
     /*
      * TCEN and TXDC are both bit 3
-     * RDR and DREN are both bit 0
      */
-    mask |= s->ucr4 & (UCR4_TCEN | UCR4_DREN);
+    mask |= s->ucr4 & UCR4_TCEN;
 
     usr2 = s->usr2 & mask;
 

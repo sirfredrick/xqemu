@@ -4,8 +4,9 @@
 #include "libqos/pci-pc.h"
 
 static QOSOps qos_ops = {
-    .alloc_init = pc_alloc_init,
-    .qpci_new = qpci_new_pc,
+    .init_allocator = pc_alloc_init_flags,
+    .uninit_allocator = pc_alloc_uninit,
+    .qpci_init = qpci_init_pc,
     .qpci_free = qpci_free_pc,
     .shutdown = qtest_pc_shutdown,
 };

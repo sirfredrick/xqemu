@@ -1,54 +1,48 @@
+[submodule "roms/vgabios"]
+	path = roms/vgabios
+	url = git://git.qemu-project.org/vgabios.git/
 [submodule "roms/seabios"]
 	path = roms/seabios
-	url = https://git.qemu.org/git/seabios.git/
+	url = git://git.qemu-project.org/seabios.git/
 [submodule "roms/SLOF"]
 	path = roms/SLOF
-	url = https://git.qemu.org/git/SLOF.git
+	url = git://git.qemu-project.org/SLOF.git
 [submodule "roms/ipxe"]
 	path = roms/ipxe
-	url = https://git.qemu.org/git/ipxe.git
+	url = git://git.qemu-project.org/ipxe.git
 [submodule "roms/openbios"]
 	path = roms/openbios
-	url = https://git.qemu.org/git/openbios.git
+	url = git://git.qemu-project.org/openbios.git
 [submodule "roms/openhackware"]
 	path = roms/openhackware
-	url = https://git.qemu.org/git/openhackware.git
+	url = git://git.qemu-project.org/openhackware.git
 [submodule "roms/qemu-palcode"]
 	path = roms/qemu-palcode
-	url = https://git.qemu.org/git/qemu-palcode.git
+	url = git://git.qemu.org/qemu-palcode.git
 [submodule "roms/sgabios"]
 	path = roms/sgabios
-	url = https://git.qemu.org/git/sgabios.git
+	url = git://git.qemu-project.org/sgabios.git
 [submodule "dtc"]
 	path = dtc
-	url = https://git.qemu.org/git/dtc.git
+	url = git://git.qemu-project.org/dtc.git
 [submodule "roms/u-boot"]
 	path = roms/u-boot
-	url = https://git.qemu.org/git/u-boot.git
+	url = git://git.qemu-project.org/u-boot.git
 [submodule "roms/skiboot"]
 	path = roms/skiboot
-	url = https://git.qemu.org/git/skiboot.git
+	url = git://git.qemu.org/skiboot.git
 [submodule "roms/QemuMacDrivers"]
 	path = roms/QemuMacDrivers
-	url = https://git.qemu.org/git/QemuMacDrivers.git
+	url = git://git.qemu.org/QemuMacDrivers.git
 [submodule "ui/keycodemapdb"]
 	path = ui/keycodemapdb
-	url = https://git.qemu.org/git/keycodemapdb.git
+	url = git://git.qemu.org/keycodemapdb.git
 [submodule "capstone"]
 	path = capstone
-	url = https://git.qemu.org/git/capstone.git
+	url = git://git.qemu.org/capstone.git
 [submodule "roms/seabios-hppa"]
 	path = roms/seabios-hppa
-	url = https://github.com/hdeller/seabios-hppa.git
+	url = git://github.com/hdeller/seabios-hppa.git
 [submodule "roms/u-boot-sam460ex"]
 	path = roms/u-boot-sam460ex
-	url = https://git.qemu.org/git/u-boot-sam460ex.git
-[submodule "tests/fp/berkeley-testfloat-3"]
-	path = tests/fp/berkeley-testfloat-3
-	url = https://github.com/cota/berkeley-testfloat-3
-[submodule "tests/fp/berkeley-softfloat-3"]
-	path = tests/fp/berkeley-softfloat-3
-	url = https://github.com/cota/berkeley-softfloat-3
-[submodule "roms/edk2"]
-	path = roms/edk2
-	url = https://github.com/tianocore/edk2.git
+	url = git://git.qemu.org/u-boot-sam460ex.git

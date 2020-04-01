@@ -35,8 +35,6 @@ struct arm_boot_info;
 
 #define TYPE_ARM_MAX_CPU "max-" TYPE_ARM_CPU
 
-typedef struct ARMCPUInfo ARMCPUInfo;
-
 /**
  * ARMCPUClass:
  * @parent_realize: The parent class' realize handler.
@@ -49,7 +47,6 @@ typedef struct ARMCPUClass {
     CPUClass parent_class;
     /*< public >*/
 
-    const ARMCPUInfo *info;
     DeviceRealize parent_realize;
     void (*parent_reset)(CPUState *cpu);
 } ARMCPUClass;

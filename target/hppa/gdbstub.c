@@ -93,19 +93,19 @@ int hppa_cpu_gdb_read_register(CPUState *cs, uint8_t *mem_buf, int n)
         val = env->cr[CR_RC];
         break;
     case 52:
-        val = env->cr[CR_PID1];
+        val = env->cr[8];
         break;
     case 53:
-        val = env->cr[CR_PID2];
+        val = env->cr[9];
         break;
     case 54:
         val = env->cr[CR_SCRCCR];
         break;
     case 55:
-        val = env->cr[CR_PID3];
+        val = env->cr[12];
         break;
     case 56:
-        val = env->cr[CR_PID4];
+        val = env->cr[13];
         break;
     case 57:
         val = env->cr[24];
@@ -224,23 +224,19 @@ int hppa_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
         env->cr[CR_RC] = val;
         break;
     case 52:
-        env->cr[CR_PID1] = val;
-        cpu_hppa_change_prot_id(env);
+        env->cr[8] = val;
         break;
     case 53:
-        env->cr[CR_PID2] = val;
-        cpu_hppa_change_prot_id(env);
+        env->cr[9] = val;
         break;
     case 54:
         env->cr[CR_SCRCCR] = val;
         break;
     case 55:
-        env->cr[CR_PID3] = val;
-        cpu_hppa_change_prot_id(env);
+        env->cr[12] = val;
         break;
     case 56:
-        env->cr[CR_PID4] = val;
-        cpu_hppa_change_prot_id(env);
+        env->cr[13] = val;
         break;
     case 57:
         env->cr[24] = val;
@@ -270,7 +266,7 @@ int hppa_cpu_gdb_write_register(CPUState *cs, uint8_t *mem_buf, int n)
     case 65 ... 127:
         {
             uint64_t *fr = &env->fr[(n - 64) / 2];
-            *fr = deposit64(*fr, (n & 1 ? 0 : 32), 32, val);
+            *fr = deposit64(*fr, val, (n & 1 ? 0 : 32), 32);
         }
         break;
     default:

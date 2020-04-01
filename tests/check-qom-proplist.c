@@ -125,13 +125,10 @@ static char *dummy_get_sv(Object *obj,
 
 static void dummy_init(Object *obj)
 {
-    Error *err = NULL;
-
     object_property_add_bool(obj, "bv",
                              dummy_get_bv,
                              dummy_set_bv,
-                             &err);
-    error_free_or_abort(&err);
+                             NULL);
 }
 
 
@@ -520,32 +517,6 @@ static void test_dummy_getenum(void)
 }
 
 
-static void test_dummy_prop_iterator(ObjectPropertyIterator *iter)
-{
-    bool seenbv = false, seensv = false, seenav = false, seentype = false;
-    ObjectProperty *prop;
-
-    while ((prop = object_property_iter_next(iter))) {
-        if (!seenbv && g_str_equal(prop->name, "bv")) {
-            seenbv = true;
-        } else if (!seensv && g_str_equal(prop->name, "sv")) {
-            seensv = true;
-        } else if (!seenav && g_str_equal(prop->name, "av")) {
-            seenav = true;
-        } else if (!seentype && g_str_equal(prop->name, "type")) {
-            /* This prop comes from the base Object class */
-            seentype = true;
-        } else {
-            g_printerr("Found prop '%s'\n", prop->name);
-            g_assert_not_reached();
-        }
-    }
-    g_assert(seenbv);
-    g_assert(seenav);
-    g_assert(seensv);
-    g_assert(seentype);
-}
-
 static void test_dummy_iterator(void)
 {
     Object *parent = object_get_objects_root();
@@ -558,21 +529,35 @@ static void test_dummy_iterator(void)
                               "sv", "Hiss hiss hiss",
                               "av", "platypus",
                               NULL));
+
+    ObjectProperty *prop;
     ObjectPropertyIterator iter;
+    bool seenbv = false, seensv = false, seenav = false, seentype;
 
     object_property_iter_init(&iter, OBJECT(dobj));
-    test_dummy_prop_iterator(&iter);
+    while ((prop = object_property_iter_next(&iter))) {
+        if (g_str_equal(prop->name, "bv")) {
+            seenbv = true;
+        } else if (g_str_equal(prop->name, "sv")) {
+            seensv = true;
+        } else if (g_str_equal(prop->name, "av")) {
+            seenav = true;
+        } else if (g_str_equal(prop->name, "type")) {
+            /* This prop comes from the base Object class */
+            seentype = true;
+        } else {
+            g_printerr("Found prop '%s'\n", prop->name);
+            g_assert_not_reached();
+        }
+    }
+    g_assert(seenbv);
+    g_assert(seenav);
+    g_assert(seensv);
+    g_assert(seentype);
+
     object_unparent(OBJECT(dobj));
 }
 
-static void test_dummy_class_iterator(void)
-{
-    ObjectPropertyIterator iter;
-    ObjectClass *klass = object_class_by_name(TYPE_DUMMY);
-
-    object_class_property_iter_init(&iter, klass);
-    test_dummy_prop_iterator(&iter);
-}
 
 static void test_dummy_delchild(void)
 {
@@ -644,7 +629,6 @@ int main(int argc, char **argv)
     g_test_add_func("/qom/proplist/badenum", test_dummy_badenum);
     g_test_add_func("/qom/proplist/getenum", test_dummy_getenum);
     g_test_add_func("/qom/proplist/iterator", test_dummy_iterator);
-    g_test_add_func("/qom/proplist/class_iterator", test_dummy_class_iterator);
     g_test_add_func("/qom/proplist/delchild", test_dummy_delchild);
     g_test_add_func("/qom/resolve/partial", test_qom_partial_path);
 

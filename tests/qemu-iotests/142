@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Test for configuring cache modes of arbitrary nodes (requires O_DIRECT)
 #
@@ -24,6 +24,7 @@ owner=kwolf@redhat.com
 seq=`basename $0`
 echo "QA output created by $seq"
 
+here=`pwd`
 status=1	# failure is the default!
 
 _cleanup()
@@ -45,7 +46,7 @@ _supported_os Linux
 _default_cache_mode none
 _supported_cache_modes none directsync
 
-do_run_qemu()
+function do_run_qemu()
 {
     echo Testing: "$@"
     (
@@ -59,7 +60,7 @@ do_run_qemu()
     echo
 }
 
-run_qemu()
+function run_qemu()
 {
     do_run_qemu "$@" 2>&1 | _filter_testdir | _filter_qemu | _filter_hmp
 }
@@ -88,7 +89,7 @@ echo
 files="if=none,file=$TEST_IMG,backing.file.filename=$TEST_IMG.base"
 ids="node-name=image,backing.node-name=backing,backing.file.node-name=backing-file,file.node-name=file"
 
-check_cache_all()
+function check_cache_all()
 {
     # cache.direct is supposed to be inherited by both bs->file and
     # bs->backing
@@ -231,7 +232,7 @@ drv_bk="if=none,file=json:{'driver':'$IMGFMT',,'file':'backing-file',,'node-name
 drv_file="if=none,driver=file,filename=$TEST_IMG,node-name=file"
 drv_img="if=none,id=blk,file=json:{'driver':'$IMGFMT',,'file':'file',,'backing':'backing',,'node-name':'image'}"
 
-check_cache_all_separate()
+function check_cache_all_separate()
 {
     # Check cache.direct
 

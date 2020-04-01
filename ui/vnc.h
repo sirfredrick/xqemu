@@ -39,13 +39,11 @@
 #include "io/channel-socket.h"
 #include "io/channel-tls.h"
 #include "io/net-listener.h"
-#include "authz/base.h"
 #include <zlib.h>
 
 #include "keymaps.h"
 #include "vnc-palette.h"
 #include "vnc-enc-zrle.h"
-#include "ui/kbd-state.h"
 
 // #define _VNC_DEBUG 1
 
@@ -157,7 +155,7 @@ struct VncDisplay
     int lock_key_sync;
     QEMUPutLEDEntry *led;
     int ledstate;
-    QKbdState *kbd;
+    int key_delay_ms;
     QemuMutex mutex;
 
     QEMUCursor *cursor;
@@ -179,8 +177,7 @@ struct VncDisplay
     bool lossy;
     bool non_adaptive;
     QCryptoTLSCreds *tlscreds;
-    QAuthZ *tlsauthz;
-    char *tlsauthzid;
+    char *tlsaclname;
 #ifdef CONFIG_VNC_SASL
     VncDisplaySASL sasl;
 #endif
@@ -258,11 +255,8 @@ typedef enum {
     VNC_STATE_UPDATE_FORCE,
 } VncStateUpdate;
 
-#define VNC_MAGIC ((uint64_t)0x05b3f069b3d204bb)
-
 struct VncState
 {
-    uint64_t magic;
     QIOChannelSocket *sioc; /* The underlying socket */
     QIOChannel *ioc; /* The channel currently used for I/O */
     guint ioc_tag;
@@ -300,9 +294,7 @@ struct VncState
     bool encode_ws;
     bool websocket;
 
-#ifdef CONFIG_VNC
     VncClientInfo *info;
-#endif
 
     /* Job thread bottom half has put data for a forced update
      * into the output buffer. This offset points to the end of
@@ -329,6 +321,8 @@ struct VncState
 
     VncReadEvent *read_handler;
     size_t read_handler_expect;
+    /* input */
+    uint8_t modifiers_state[256];
 
     bool abort;
     QemuMutex output_mutex;

@@ -15,15 +15,13 @@
 #include "replay-internal.h"
 #include "qemu/error-report.h"
 
-int64_t replay_save_clock(ReplayClockKind kind, int64_t clock, int64_t raw_icount)
+int64_t replay_save_clock(ReplayClockKind kind, int64_t clock)
 {
+
     if (replay_file) {
         g_assert(replay_mutex_locked());
 
-        /* Due to the caller's locking requirements we get the icount from it
-         * instead of using replay_save_instructions().
-         */
-        replay_advance_current_step(raw_icount);
+        replay_save_instructions();
         replay_put_event(EVENT_CLOCK + kind);
         replay_put_qword(clock);
     }

@@ -16,15 +16,6 @@
 
 #define TYPE_PVPANIC "pvpanic"
 
-#define PVPANIC_IOPORT_PROP "ioport"
-
-static inline uint16_t pvpanic_port(void)
-{
-    Object *o = object_resolve_path_type("", TYPE_PVPANIC, NULL);
-    if (!o) {
-        return 0;
-    }
-    return object_property_get_uint(o, PVPANIC_IOPORT_PROP, NULL);
-}
+uint16_t pvpanic_port(void);
 
 #endif

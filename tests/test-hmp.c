@@ -20,7 +20,6 @@
 static int verbose;
 
 static const char *hmp_cmds[] = {
-    "announce_self",
     "boot_set ndc",
     "chardev-add null,id=testchardev1",
     "chardev-send-break testchardev1",
@@ -31,7 +30,6 @@ static const char *hmp_cmds[] = {
     "cpu 0",
     "device_add ?",
     "device_add usb-mouse,id=mouse1",
-    "drive_add ignored format=help",
     "mouse_button 7",
     "mouse_move 10 10",
     "mouse_button 0",
@@ -160,7 +158,7 @@ int main(int argc, char **argv)
 
     g_test_init(&argc, &argv, NULL);
 
-    qtest_cb_for_every_machine(add_machine_test_case, g_test_quick());
+    qtest_cb_for_every_machine(add_machine_test_case);
 
     /* as none machine has no memory by default, add a test case with memory */
     qtest_add_data_func("hmp/none+2MB", g_strdup("none -m 2"), test_machine);

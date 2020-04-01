@@ -71,10 +71,13 @@ static const char* reg2str(enum Reg reg) {
 static inline unsigned in_reg(IVState *s, enum Reg reg)
 {
     const char *name = reg2str(reg);
+    QTestState *qtest = global_qtest;
     unsigned res;
 
+    global_qtest = s->qs->qts;
     res = qpci_io_readl(s->dev, s->reg_bar, reg);
-    g_test_message("*%s -> %x", name, res);
+    g_test_message("*%s -> %x\n", name, res);
+    global_qtest = qtest;
 
     return res;
 }
@@ -82,25 +85,35 @@ static inline unsigned in_reg(IVState *s, enum Reg reg)
 static inline void out_reg(IVState *s, enum Reg reg, unsigned v)
 {
     const char *name = reg2str(reg);
+    QTestState *qtest = global_qtest;
 
-    g_test_message("%x -> *%s", v, name);
+    global_qtest = s->qs->qts;
+    g_test_message("%x -> *%s\n", v, name);
     qpci_io_writel(s->dev, s->reg_bar, reg, v);
+    global_qtest = qtest;
 }
 
 static inline void read_mem(IVState *s, uint64_t off, void *buf, size_t len)
 {
+    QTestState *qtest = global_qtest;
+
+    global_qtest = s->qs->qts;
     qpci_memread(s->dev, s->mem_bar, off, buf, len);
+    global_qtest = qtest;
 }
 
 static inline void write_mem(IVState *s, uint64_t off,
                              const void *buf, size_t len)
 {
+    QTestState *qtest = global_qtest;
+
+    global_qtest = s->qs->qts;
     qpci_memwrite(s->dev, s->mem_bar, off, buf, len);
+    global_qtest = qtest;
 }
 
 static void cleanup_vm(IVState *s)
 {
-    assert(!global_qtest);
     g_free(s->dev);
     qtest_shutdown(s->qs);
 }
@@ -118,6 +131,7 @@ static void setup_vm_cmd(IVState *s, const char *cmd, bool msix)
         g_printerr("ivshmem-test tests are only available on x86 or ppc64\n");
         exit(EXIT_FAILURE);
     }
+    global_qtest = s->qs->qts;
     s->dev = get_device(s->qs->pcibus);
 
     s->reg_bar = qpci_iomap(s->dev, 0, &barsize);
@@ -291,20 +305,20 @@ static void *server_thread(void *data)
     return NULL;
 }
 
-static void setup_vm_with_server(IVState *s, int nvectors)
+static void setup_vm_with_server(IVState *s, int nvectors, bool msi)
 {
-    char *cmd;
+    char *cmd = g_strdup_printf("-chardev socket,id=chr0,path=%s,nowait "
+                                "-device ivshmem%s,chardev=chr0,vectors=%d",
+                                tmpserver,
+                                msi ? "-doorbell" : ",size=1M,msi=off",
+                                nvectors);
 
-    cmd = g_strdup_printf("-chardev socket,id=chr0,path=%s "
-                          "-device ivshmem-doorbell,chardev=chr0,vectors=%d",
-                          tmpserver, nvectors);
-
-    setup_vm_cmd(s, cmd, true);
+    setup_vm_cmd(s, cmd, msi);
 
     g_free(cmd);
 }
 
-static void test_ivshmem_server(void)
+static void test_ivshmem_server(bool msi)
 {
     IVState state1, state2, *s1, *s2;
     ServerThread thread;
@@ -327,9 +341,9 @@ static void test_ivshmem_server(void)
     thread.thread = g_thread_new("ivshmem-server", server_thread, &thread);
     g_assert(thread.thread != NULL);
 
-    setup_vm_with_server(&state1, nvectors);
+    setup_vm_with_server(&state1, nvectors, msi);
     s1 = &state1;
-    setup_vm_with_server(&state2, nvectors);
+    setup_vm_with_server(&state2, nvectors, msi);
     s2 = &state2;
 
     /* check got different VM ids */
@@ -340,28 +354,40 @@ static void test_ivshmem_server(void)
     g_assert_cmpint(vm1, !=, vm2);
 
     /* check number of MSI-X vectors */
-    ret = qpci_msix_table_size(s1->dev);
-    g_assert_cmpuint(ret, ==, nvectors);
+    global_qtest = s1->qs->qts;
+    if (msi) {
+        ret = qpci_msix_table_size(s1->dev);
+        g_assert_cmpuint(ret, ==, nvectors);
+    }
 
     /* TODO test behavior before MSI-X is enabled */
 
     /* ping vm2 -> vm1 on vector 0 */
-    ret = qpci_msix_pending(s1->dev, 0);
-    g_assert_cmpuint(ret, ==, 0);
+    if (msi) {
+        ret = qpci_msix_pending(s1->dev, 0);
+        g_assert_cmpuint(ret, ==, 0);
+    } else {
+        g_assert_cmpuint(in_reg(s1, INTRSTATUS), ==, 0);
+    }
     out_reg(s2, DOORBELL, vm1 << 16);
     do {
         g_usleep(10000);
-        ret = qpci_msix_pending(s1->dev, 0);
+        ret = msi ? qpci_msix_pending(s1->dev, 0) : in_reg(s1, INTRSTATUS);
     } while (ret == 0 && g_get_monotonic_time() < end_time);
     g_assert_cmpuint(ret, !=, 0);
 
     /* ping vm1 -> vm2 on vector 1 */
-    ret = qpci_msix_pending(s2->dev, 1);
-    g_assert_cmpuint(ret, ==, 0);
+    global_qtest = s2->qs->qts;
+    if (msi) {
+        ret = qpci_msix_pending(s2->dev, 1);
+        g_assert_cmpuint(ret, ==, 0);
+    } else {
+        g_assert_cmpuint(in_reg(s2, INTRSTATUS), ==, 0);
+    }
     out_reg(s1, DOORBELL, vm2 << 16 | 1);
     do {
         g_usleep(10000);
-        ret = qpci_msix_pending(s2->dev, 1);
+        ret = msi ? qpci_msix_pending(s2->dev, 1) : in_reg(s2, INTRSTATUS);
     } while (ret == 0 && g_get_monotonic_time() < end_time);
     g_assert_cmpuint(ret, !=, 0);
 
@@ -379,22 +405,34 @@ static void test_ivshmem_server(void)
     close(thread.pipe[0]);
 }
 
+static void test_ivshmem_server_msi(void)
+{
+    test_ivshmem_server(true);
+}
+
+static void test_ivshmem_server_irq(void)
+{
+    test_ivshmem_server(false);
+}
+
 #define PCI_SLOT_HP             0x06
 
 static void test_ivshmem_hotplug(void)
 {
     const char *arch = qtest_get_arch();
+    gchar *opts;
 
-    qtest_start("-object memory-backend-ram,size=1M,id=mb1");
+    qtest_start("");
 
-    qtest_qmp_device_add("ivshmem-plain", "iv1",
-                         "{'addr': %s, 'memdev': 'mb1'}",
-                         stringify(PCI_SLOT_HP));
+    opts = g_strdup_printf("'shm': '%s', 'size': '1M'", tmpshm);
+
+    qpci_plug_device_test("ivshmem", "iv1", PCI_SLOT_HP, opts);
     if (strcmp(arch, "ppc64") != 0) {
         qpci_unplug_acpi_device_test("iv1", PCI_SLOT_HP);
     }
 
     qtest_end();
+    g_free(opts);
 }
 
 static void test_ivshmem_memdev(void)
@@ -466,13 +504,19 @@ int main(int argc, char **argv)
     const char *arch = qtest_get_arch();
     gchar dir[] = "/tmp/ivshmem-test.XXXXXX";
 
+#if !GLIB_CHECK_VERSION(2, 31, 0)
+    if (!g_thread_supported()) {
+        g_thread_init(NULL);
+    }
+#endif
+
     g_test_init(&argc, &argv, NULL);
 
     qtest_add_abrt_handler(abrt_handler, NULL);
     /* shm */
     tmpshm = mktempshm(TMPSHMSIZE, &fd);
     if (!tmpshm) {
-        goto out;
+        return 0;
     }
     tmpshmem = mmap(0, TMPSHMSIZE, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     g_assert(tmpshmem != MAP_FAILED);
@@ -489,12 +533,14 @@ int main(int argc, char **argv)
     if (g_test_slow()) {
         qtest_add_func("/ivshmem/pair", test_ivshmem_pair);
         if (strcmp(arch, "ppc64") != 0) {
-            qtest_add_func("/ivshmem/server", test_ivshmem_server);
+            qtest_add_func("/ivshmem/server-msi", test_ivshmem_server_msi);
+            qtest_add_func("/ivshmem/server-irq", test_ivshmem_server_irq);
         }
     }
 
-out:
     ret = g_test_run();
+
     cleanup();
+
     return ret;
 }

@@ -159,8 +159,8 @@ typedef enum {
     INSN_STRD_IMM  = 0x004000f0,
     INSN_STRD_REG  = 0x000000f0,
 
-    INSN_DMB_ISH   = 0xf57ff05b,
-    INSN_DMB_MCR   = 0xee070fba,
+    INSN_DMB_ISH   = 0x5bf07ff5,
+    INSN_DMB_MCR   = 0xba0f07ee,
 
     /* Architected nop introduced in v6k.  */
     /* ??? This is an MSR (imm) 0,0,0 insn.  Anyone know if this
@@ -187,23 +187,27 @@ static const uint8_t tcg_cond_to_arm_cond[] = {
     [TCG_COND_GTU] = COND_HI,
 };
 
-static inline bool reloc_pc24(tcg_insn_unit *code_ptr, tcg_insn_unit *target)
+static inline void reloc_pc24(tcg_insn_unit *code_ptr, tcg_insn_unit *target)
 {
     ptrdiff_t offset = (tcg_ptr_byte_diff(target, code_ptr) - 8) >> 2;
-    if (offset == sextract32(offset, 0, 24)) {
-        *code_ptr = (*code_ptr & ~0xffffff) | (offset & 0xffffff);
-        return true;
-    }
-    return false;
+    *code_ptr = (*code_ptr & ~0xffffff) | (offset & 0xffffff);
 }
 
-static bool patch_reloc(tcg_insn_unit *code_ptr, int type,
+static inline void reloc_pc24_atomic(tcg_insn_unit *code_ptr, tcg_insn_unit *target)
+{
+    ptrdiff_t offset = (tcg_ptr_byte_diff(target, code_ptr) - 8) >> 2;
+    tcg_insn_unit insn = atomic_read(code_ptr);
+    tcg_debug_assert(offset == sextract32(offset, 0, 24));
+    atomic_set(code_ptr, deposit32(insn, 0, 24, offset));
+}
+
+static void patch_reloc(tcg_insn_unit *code_ptr, int type,
                         intptr_t value, intptr_t addend)
 {
     tcg_debug_assert(addend == 0);
 
     if (type == R_ARM_PC24) {
-        return reloc_pc24(code_ptr, (tcg_insn_unit *)value);
+        reloc_pc24(code_ptr, (tcg_insn_unit *)value);
     } else if (type == R_ARM_PC13) {
         intptr_t diff = value - (uintptr_t)(code_ptr + 2);
         tcg_insn_unit insn = *code_ptr;
@@ -217,11 +221,7 @@ static bool patch_reloc(tcg_insn_unit *code_ptr, int type,
         } else {
             int rd = extract32(insn, 12, 4);
             int rt = rd == TCG_REG_PC ? TCG_REG_TMP : rd;
-
-            if (diff < 0x1000 || diff >= 0x100000) {
-                return false;
-            }
-
+            assert(diff >= 0x1000 && diff < 0x100000);
             /* add rt, pc, #high */
             *code_ptr++ = ((insn & 0xf0000000) | (1 << 25) | ARITH_ADD
                            | (TCG_REG_PC << 16) | (rt << 12)
@@ -237,7 +237,6 @@ static bool patch_reloc(tcg_insn_unit *code_ptr, int type,
     } else {
         g_assert_not_reached();
     }
-    return true;
 }
 
 #define TCG_CT_CONST_ARM  0x100
@@ -375,6 +374,22 @@ static inline void tcg_out_b(TCGContext *s, int cond, int32_t offset)
                     (((offset - 8) >> 2) & 0x00ffffff));
 }
 
+static inline void tcg_out_b_noaddr(TCGContext *s, int cond)
+{
+    /* We pay attention here to not modify the branch target by masking
+       the corresponding bytes.  This ensure that caches and memory are
+       kept coherent during retranslation. */
+    tcg_out32(s, deposit32(*s->code_ptr, 24, 8, (cond << 4) | 0x0a));
+}
+
+static inline void tcg_out_bl_noaddr(TCGContext *s, int cond)
+{
+    /* We pay attention here to not modify the branch target by masking
+       the corresponding bytes.  This ensure that caches and memory are
+       kept coherent during retranslation. */
+    tcg_out32(s, deposit32(*s->code_ptr, 24, 8, (cond << 4) | 0x0b));
+}
+
 static inline void tcg_out_bl(TCGContext *s, int cond, int32_t offset)
 {
     tcg_out32(s, (cond << 28) | 0x0b000000 |
@@ -498,12 +513,6 @@ static inline void tcg_out_ldrd_r(TCGContext *s, int cond, TCGReg rt,
                                   TCGReg rn, TCGReg rm)
 {
     tcg_out_memop_r(s, cond, INSN_LDRD_REG, rt, rn, rm, 1, 1, 0);
-}
-
-static inline void tcg_out_ldrd_rwb(TCGContext *s, int cond, TCGReg rt,
-                                    TCGReg rn, TCGReg rm)
-{
-    tcg_out_memop_r(s, cond, INSN_LDRD_REG, rt, rn, rm, 1, 1, 1);
 }
 
 static inline void tcg_out_strd_8(TCGContext *s, int cond, TCGReg rt,
@@ -1081,7 +1090,7 @@ static inline void tcg_out_goto_label(TCGContext *s, int cond, TCGLabel *l)
         tcg_out_goto(s, cond, l->u.value_ptr);
     } else {
         tcg_out_reloc(s, s->code_ptr, R_ARM_PC24, l, 0);
-        tcg_out_b(s, cond, 0);
+        tcg_out_b_noaddr(s, cond);
     }
 }
 
@@ -1235,13 +1244,8 @@ static TCGReg tcg_out_arg_reg64(TCGContext *s, TCGReg argreg,
 
 #define TLB_SHIFT	(CPU_TLB_ENTRY_BITS + CPU_TLB_BITS)
 
-/* We expect tlb_mask to be before tlb_table.  */
-QEMU_BUILD_BUG_ON(offsetof(CPUArchState, tlb_table) <
-                  offsetof(CPUArchState, tlb_mask));
-
-/* We expect to use a 20-bit unsigned offset from ENV.  */
-QEMU_BUILD_BUG_ON(offsetof(CPUArchState, tlb_table[NB_MMU_MODES - 1])
-                  > 0xfffff);
+/* We're expecting to use an 8-bit immediate and to mask.  */
+QEMU_BUILD_BUG_ON(CPU_TLB_BITS > 8);
 
 /* Load and compare a TLB entry, leaving the flags set.  Returns the register
    containing the addend of the tlb entry.  Clobbers R0, R1, R2, TMP.  */
@@ -1249,72 +1253,84 @@ QEMU_BUILD_BUG_ON(offsetof(CPUArchState, tlb_table[NB_MMU_MODES - 1])
 static TCGReg tcg_out_tlb_read(TCGContext *s, TCGReg addrlo, TCGReg addrhi,
                                TCGMemOp opc, int mem_index, bool is_load)
 {
-    int cmp_off = (is_load ? offsetof(CPUTLBEntry, addr_read)
-                   : offsetof(CPUTLBEntry, addr_write));
-    int mask_off = offsetof(CPUArchState, tlb_mask[mem_index]);
-    int table_off = offsetof(CPUArchState, tlb_table[mem_index]);
-    TCGReg mask_base = TCG_AREG0, table_base = TCG_AREG0;
+    TCGReg base = TCG_AREG0;
+    int cmp_off =
+        (is_load
+         ? offsetof(CPUArchState, tlb_table[mem_index][0].addr_read)
+         : offsetof(CPUArchState, tlb_table[mem_index][0].addr_write));
+    int add_off = offsetof(CPUArchState, tlb_table[mem_index][0].addend);
+    int mask_off;
     unsigned s_bits = opc & MO_SIZE;
     unsigned a_bits = get_alignment_bits(opc);
 
-    if (table_off > 0xfff) {
-        int mask_hi = mask_off & ~0xfff;
-        int table_hi = table_off & ~0xfff;
-        int rot;
-
-        table_base = TCG_REG_R2;
-        if (mask_hi == table_hi) {
-            mask_base = table_base;
-        } else if (mask_hi) {
-            mask_base = TCG_REG_TMP;
-            rot = encode_imm(mask_hi);
-            assert(rot >= 0);
-            tcg_out_dat_imm(s, COND_AL, ARITH_ADD, mask_base, TCG_AREG0,
-                            rotl(mask_hi, rot) | (rot << 7));
-        }
-        rot = encode_imm(table_hi);
-        assert(rot >= 0);
-        tcg_out_dat_imm(s, COND_AL, ARITH_ADD, table_base, TCG_AREG0,
-                        rotl(table_hi, rot) | (rot << 7));
-
-        mask_off -= mask_hi;
-        table_off -= table_hi;
-    }
-
-    /* Load tlb_mask[mmu_idx] and tlb_table[mmu_idx].  */
-    tcg_out_ld(s, TCG_TYPE_I32, TCG_REG_TMP, mask_base, mask_off);
-    tcg_out_ld(s, TCG_TYPE_I32, TCG_REG_R2, table_base, table_off);
-
-    /* Extract the tlb index from the address into TMP.  */
-    tcg_out_dat_reg(s, COND_AL, ARITH_AND, TCG_REG_TMP, TCG_REG_TMP, addrlo,
-                    SHIFT_IMM_LSR(TARGET_PAGE_BITS - CPU_TLB_ENTRY_BITS));
-
-    /*
-     * Add the tlb_table pointer, creating the CPUTLBEntry address in R2.
-     * Load the tlb comparator into R0/R1 and the fast path addend into R2.
+    /* V7 generates the following:
+     *   ubfx   r0, addrlo, #TARGET_PAGE_BITS, #CPU_TLB_BITS
+     *   add    r2, env, #high
+     *   add    r2, r2, r0, lsl #CPU_TLB_ENTRY_BITS
+     *   ldr    r0, [r2, #cmp]
+     *   ldr    r2, [r2, #add]
+     *   movw   tmp, #page_align_mask
+     *   bic    tmp, addrlo, tmp
+     *   cmp    r0, tmp
+     *
+     * Otherwise we generate:
+     *   shr    tmp, addrlo, #TARGET_PAGE_BITS
+     *   add    r2, env, #high
+     *   and    r0, tmp, #(CPU_TLB_SIZE - 1)
+     *   add    r2, r2, r0, lsl #CPU_TLB_ENTRY_BITS
+     *   ldr    r0, [r2, #cmp]
+     *   ldr    r2, [r2, #add]
+     *   tst    addrlo, #s_mask
+     *   cmpeq  r0, tmp, lsl #TARGET_PAGE_BITS
      */
-    if (cmp_off == 0) {
-	if (use_armv6_instructions && TARGET_LONG_BITS == 64) {
-            tcg_out_ldrd_rwb(s, COND_AL, TCG_REG_R0, TCG_REG_R2, TCG_REG_TMP);
-        } else {
-            tcg_out_ld32_rwb(s, COND_AL, TCG_REG_R0, TCG_REG_R2, TCG_REG_TMP);
-        }
+    if (use_armv7_instructions) {
+        tcg_out_extract(s, COND_AL, TCG_REG_R0, addrlo,
+                        TARGET_PAGE_BITS, CPU_TLB_BITS);
     } else {
-        tcg_out_dat_reg(s, COND_AL, ARITH_ADD,
-		        TCG_REG_R2, TCG_REG_R2, TCG_REG_TMP, 0);
-        if (use_armv6_instructions && TARGET_LONG_BITS == 64) {
-            tcg_out_ldrd_8(s, COND_AL, TCG_REG_R0, TCG_REG_R2, cmp_off);
-        } else {
-            tcg_out_ld32_12(s, COND_AL, TCG_REG_R0, TCG_REG_R2, cmp_off);
-	}
+        tcg_out_dat_reg(s, COND_AL, ARITH_MOV, TCG_REG_TMP,
+                        0, addrlo, SHIFT_IMM_LSR(TARGET_PAGE_BITS));
     }
-    if (!use_armv6_instructions && TARGET_LONG_BITS == 64) {
-        tcg_out_ld32_12(s, COND_AL, TCG_REG_R1, TCG_REG_R2, cmp_off + 4);
+
+    /* Add portions of the offset until the memory access is in range.
+     * If we plan on using ldrd, reduce to an 8-bit offset; otherwise
+     * we can use a 12-bit offset.  */
+    if (use_armv6_instructions && TARGET_LONG_BITS == 64) {
+        mask_off = 0xff;
+    } else {
+        mask_off = 0xfff;
+    }
+    while (cmp_off > mask_off) {
+        int shift = ctz32(cmp_off & ~mask_off) & ~1;
+        int rot = ((32 - shift) << 7) & 0xf00;
+        int addend = cmp_off & (0xff << shift);
+        tcg_out_dat_imm(s, COND_AL, ARITH_ADD, TCG_REG_R2, base,
+                        rot | ((cmp_off >> shift) & 0xff));
+        base = TCG_REG_R2;
+        add_off -= addend;
+        cmp_off -= addend;
+    }
+
+    if (!use_armv7_instructions) {
+        tcg_out_dat_imm(s, COND_AL, ARITH_AND,
+                        TCG_REG_R0, TCG_REG_TMP, CPU_TLB_SIZE - 1);
+    }
+    tcg_out_dat_reg(s, COND_AL, ARITH_ADD, TCG_REG_R2, base,
+                    TCG_REG_R0, SHIFT_IMM_LSL(CPU_TLB_ENTRY_BITS));
+
+    /* Load the tlb comparator.  Use ldrd if needed and available,
+       but due to how the pointer needs setting up, ldm isn't useful.
+       Base arm5 doesn't have ldrd, but armv5te does.  */
+    if (use_armv6_instructions && TARGET_LONG_BITS == 64) {
+        tcg_out_ldrd_8(s, COND_AL, TCG_REG_R0, TCG_REG_R2, cmp_off);
+    } else {
+        tcg_out_ld32_12(s, COND_AL, TCG_REG_R0, TCG_REG_R2, cmp_off);
+        if (TARGET_LONG_BITS == 64) {
+            tcg_out_ld32_12(s, COND_AL, TCG_REG_R1, TCG_REG_R2, cmp_off + 4);
+        }
     }
 
     /* Load the tlb addend.  */
-    tcg_out_ld32_12(s, COND_AL, TCG_REG_R2, TCG_REG_R2,
-                    offsetof(CPUTLBEntry, addend));
+    tcg_out_ld32_12(s, COND_AL, TCG_REG_R2, TCG_REG_R2, add_off);
 
     /* Check alignment.  We don't support inline unaligned acceses,
        but we can easily support overalignment checks.  */
@@ -1379,8 +1395,7 @@ static void tcg_out_qemu_ld_slow_path(TCGContext *s, TCGLabelQemuLdst *lb)
     TCGMemOp opc = get_memop(oi);
     void *func;
 
-    bool ok = reloc_pc24(lb->label_ptr[0], s->code_ptr);
-    tcg_debug_assert(ok);
+    reloc_pc24(lb->label_ptr[0], s->code_ptr);
 
     argreg = tcg_out_arg_reg32(s, TCG_REG_R0, TCG_AREG0);
     if (TARGET_LONG_BITS == 64) {
@@ -1440,8 +1455,7 @@ static void tcg_out_qemu_st_slow_path(TCGContext *s, TCGLabelQemuLdst *lb)
     TCGMemOpIdx oi = lb->oi;
     TCGMemOp opc = get_memop(oi);
 
-    bool ok = reloc_pc24(lb->label_ptr[0], s->code_ptr);
-    tcg_debug_assert(ok);
+    reloc_pc24(lb->label_ptr[0], s->code_ptr);
 
     argreg = TCG_REG_R0;
     argreg = tcg_out_arg_reg32(s, argreg, TCG_AREG0);
@@ -1622,7 +1636,7 @@ static void tcg_out_qemu_ld(TCGContext *s, const TCGArg *args, bool is64)
     /* This a conditional BL only to load a pointer within this opcode into LR
        for the slow path.  We will not be using the value for a tail call.  */
     label_ptr = s->code_ptr;
-    tcg_out_bl(s, COND_NE, 0);
+    tcg_out_bl_noaddr(s, COND_NE);
 
     tcg_out_qemu_ld_index(s, opc, datalo, datahi, addrlo, addend);
 
@@ -1754,7 +1768,7 @@ static void tcg_out_qemu_st(TCGContext *s, const TCGArg *args, bool is64)
 
     /* The conditional call must come last, as we're going to return here.  */
     label_ptr = s->code_ptr;
-    tcg_out_bl(s, COND_NE, 0);
+    tcg_out_bl_noaddr(s, COND_NE);
 
     add_qemu_ldst_label(s, false, oi, datalo, datahi, addrlo, addrhi,
                         s->code_ptr, label_ptr);
@@ -1808,7 +1822,7 @@ static inline void tcg_out_op(TCGContext *s, TCGOpcode opc,
                 tcg_out_movi32(s, COND_AL, base, ptr - dil);
             }
             tcg_out_ld32_12(s, COND_AL, TCG_REG_PC, base, dil);
-            set_jmp_reset_offset(s, args[0]);
+            s->tb_jmp_reset_offset[args[0]] = tcg_current_code_size(s);
         }
         break;
     case INDEX_op_goto_ptr:

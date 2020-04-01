@@ -40,7 +40,7 @@ static void mos6522_timer_update(MOS6522State *s, MOS6522Timer *ti,
 
 static void mos6522_update_irq(MOS6522State *s)
 {
-    if (s->ifr & s->ier) {
+    if (s->ifr & s->ier & (SR_INT | T1_INT | T2_INT)) {
         qemu_irq_raise(s->irq);
     } else {
         qemu_irq_lower(s->irq);
@@ -176,8 +176,12 @@ static void mos6522_set_sr_int(MOS6522State *s)
 
 static uint64_t mos6522_get_counter_value(MOS6522State *s, MOS6522Timer *ti)
 {
-    return muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - ti->load_time,
-                    ti->frequency, NANOSECONDS_PER_SECOND);
+    uint64_t d;
+
+    d = muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - ti->load_time,
+                 ti->frequency, NANOSECONDS_PER_SECOND);
+
+    return d;
 }
 
 static uint64_t mos6522_get_load_time(MOS6522State *s, MOS6522Timer *ti)
@@ -189,12 +193,12 @@ static uint64_t mos6522_get_load_time(MOS6522State *s, MOS6522Timer *ti)
 
 static void mos6522_portA_write(MOS6522State *s)
 {
-    qemu_log_mask(LOG_UNIMP, "portA_write unimplemented\n");
+    qemu_log_mask(LOG_UNIMP, "portA_write unimplemented");
 }
 
 static void mos6522_portB_write(MOS6522State *s)
 {
-    qemu_log_mask(LOG_UNIMP, "portB_write unimplemented\n");
+    qemu_log_mask(LOG_UNIMP, "portB_write unimplemented");
 }
 
 uint64_t mos6522_read(void *opaque, hwaddr addr, unsigned size)
@@ -241,7 +245,7 @@ uint64_t mos6522_read(void *opaque, hwaddr addr, unsigned size)
         break;
     case VIA_REG_SR:
         val = s->sr;
-        s->ifr &= ~SR_INT;
+        s->ifr &= ~(SR_INT | CB1_INT | CB2_INT);
         mos6522_update_irq(s);
         break;
     case VIA_REG_ACR:
@@ -369,6 +373,13 @@ static const MemoryRegionOps mos6522_ops = {
     },
 };
 
+static bool mos6522_timer_exist(void *opaque, int version_id)
+{
+    MOS6522Timer *s = opaque;
+
+    return s->timer != NULL;
+}
+
 static const VMStateDescription vmstate_mos6522_timer = {
     .name = "mos6522_timer",
     .version_id = 0,
@@ -378,12 +389,12 @@ static const VMStateDescription vmstate_mos6522_timer = {
         VMSTATE_UINT16(counter_value, MOS6522Timer),
         VMSTATE_INT64(load_time, MOS6522Timer),
         VMSTATE_INT64(next_irq_time, MOS6522Timer),
-        VMSTATE_TIMER_PTR(timer, MOS6522Timer),
+        VMSTATE_TIMER_PTR_TEST(timer, MOS6522Timer, mos6522_timer_exist),
         VMSTATE_END_OF_LIST()
     }
 };
 
-const VMStateDescription vmstate_mos6522 = {
+static const VMStateDescription vmstate_mos6522 = {
     .name = "mos6522",
     .version_id = 0,
     .minimum_version_id = 0,
@@ -398,7 +409,7 @@ const VMStateDescription vmstate_mos6522 = {
         VMSTATE_UINT8(ifr, MOS6522State),
         VMSTATE_UINT8(ier, MOS6522State),
         VMSTATE_UINT8(anh, MOS6522State),
-        VMSTATE_STRUCT_ARRAY(timers, MOS6522State, 2, 0,
+        VMSTATE_STRUCT_ARRAY(timers, MOS6522State, 2, 1,
                              vmstate_mos6522_timer, MOS6522Timer),
         VMSTATE_END_OF_LIST()
     }
@@ -420,12 +431,18 @@ static void mos6522_reset(DeviceState *dev)
     /* s->ier = T1_INT | SR_INT; */
     s->anh = 0;
 
-    s->timers[0].frequency = s->frequency;
     s->timers[0].latch = 0xffff;
     set_counter(s, &s->timers[0], 0xffff);
 
-    s->timers[1].frequency = s->frequency;
     s->timers[1].latch = 0xffff;
+}
+
+static void mos6522_realize(DeviceState *dev, Error **errp)
+{
+    MOS6522State *s = MOS6522(dev);
+
+    s->timers[0].frequency = s->frequency;
+    s->timers[1].frequency = s->frequency;
 }
 
 static void mos6522_init(Object *obj)
@@ -456,14 +473,14 @@ static void mos6522_class_init(ObjectClass *oc, void *data)
     DeviceClass *dc = DEVICE_CLASS(oc);
     MOS6522DeviceClass *mdc = MOS6522_DEVICE_CLASS(oc);
 
+    dc->realize = mos6522_realize;
     dc->reset = mos6522_reset;
     dc->vmsd = &vmstate_mos6522;
     dc->props = mos6522_properties;
-    mdc->parent_reset = dc->reset;
+    mdc->parent_realize = dc->realize;
     mdc->set_sr_int = mos6522_set_sr_int;
     mdc->portB_write = mos6522_portB_write;
     mdc->portA_write = mos6522_portA_write;
-    mdc->update_irq = mos6522_update_irq;
     mdc->get_timer1_counter_value = mos6522_get_counter_value;
     mdc->get_timer2_counter_value = mos6522_get_counter_value;
     mdc->get_timer1_load_time = mos6522_get_load_time;

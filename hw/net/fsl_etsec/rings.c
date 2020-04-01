@@ -152,7 +152,17 @@ static void ievent_set(eTSEC    *etsec,
 {
     etsec->regs[IEVENT].value |= flags;
 
-    etsec_update_irq(etsec);
+    if ((flags & IEVENT_TXB && etsec->regs[IMASK].value & IMASK_TXBEN)
+        || (flags & IEVENT_TXF && etsec->regs[IMASK].value & IMASK_TXFEN)) {
+        qemu_irq_raise(etsec->tx_irq);
+        RING_DEBUG("%s Raise Tx IRQ\n", __func__);
+    }
+
+    if ((flags & IEVENT_RXB && etsec->regs[IMASK].value & IMASK_RXBEN)
+        || (flags & IEVENT_RXF && etsec->regs[IMASK].value & IMASK_RXFEN)) {
+        qemu_irq_raise(etsec->rx_irq);
+        RING_DEBUG("%s Raise Rx IRQ\n", __func__);
+    }
 }
 
 static void tx_padding_and_crc(eTSEC *etsec, uint32_t min_frame_len)

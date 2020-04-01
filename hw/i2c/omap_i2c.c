@@ -17,7 +17,6 @@
  * with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 #include "qemu/osdep.h"
-#include "qemu/log.h"
 #include "hw/hw.h"
 #include "hw/i2c/i2c.h"
 #include "hw/arm/omap.h"
@@ -340,15 +339,14 @@ static void omap_i2c_write(void *opaque, hwaddr addr,
             }
             break;
         }
-        if ((value & (1 << 15)) && !(value & (1 << 10))) {    /* MST */
-            qemu_log_mask(LOG_UNIMP, "%s: I^2C slave mode not supported\n",
-                          __func__);
+        if ((value & (1 << 15)) && !(value & (1 << 10))) {	/* MST */
+            fprintf(stderr, "%s: I^2C slave mode not supported\n",
+                            __func__);
             break;
         }
-        if ((value & (1 << 15)) && value & (1 << 8)) {        /* XA */
-            qemu_log_mask(LOG_UNIMP,
-                          "%s: 10-bit addressing mode not supported\n",
-                          __func__);
+        if ((value & (1 << 15)) && value & (1 << 8)) {		/* XA */
+            fprintf(stderr, "%s: 10-bit addressing mode not supported\n",
+                            __func__);
             break;
         }
         if ((value & (1 << 15)) && value & (1 << 0)) {		/* STT */
@@ -394,10 +392,8 @@ static void omap_i2c_write(void *opaque, hwaddr addr,
                 s->stat |= 0x3f;
                 omap_i2c_interrupts_update(s);
             }
-        if (value & (1 << 15)) {                    /* ST_EN */
-            qemu_log_mask(LOG_UNIMP,
-                          "%s: System Test not supported\n", __func__);
-        }
+        if (value & (1 << 15))					/* ST_EN */
+            fprintf(stderr, "%s: System Test not supported\n", __func__);
         break;
 
     default:

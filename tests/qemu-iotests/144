@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Check live snapshot, followed by active commit, and another snapshot.
 #
 # This test is to catch the error case of BZ #1300209:
@@ -26,6 +26,7 @@ owner=jcody@redhat.com
 seq=`basename $0`
 echo "QA output created by $seq"
 
+here=`pwd`
 status=1	# failure is the default!
 
 TMP_SNAP1=${TEST_DIR}/tmp.qcow2
@@ -92,7 +93,7 @@ _send_qemu_cmd $h "{ 'execute': 'block-job-complete',
                                 'arguments': {
                                                 'device': 'virtio0'
                                               }
-                   }" '"status": "null"'
+                   }" "COMPLETED"
 
 echo
 echo === Performing Live Snapshot 2 ===

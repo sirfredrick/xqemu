@@ -57,7 +57,7 @@ struct RngBackend
 
     /*< protected >*/
     bool opened;
-    QSIMPLEQ_HEAD(, RngRequest) requests;
+    QSIMPLEQ_HEAD(requests, RngRequest) requests;
 };
 
 

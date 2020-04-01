@@ -33,24 +33,20 @@
 #define SUFFIX q
 #define USUFFIX q
 #define DATA_TYPE uint64_t
-#define SHIFT 3
 #elif DATA_SIZE == 4
 #define SUFFIX l
 #define USUFFIX l
 #define DATA_TYPE uint32_t
-#define SHIFT 2
 #elif DATA_SIZE == 2
 #define SUFFIX w
 #define USUFFIX uw
 #define DATA_TYPE uint16_t
 #define DATA_STYPE int16_t
-#define SHIFT 1
 #elif DATA_SIZE == 1
 #define SUFFIX b
 #define USUFFIX ub
 #define DATA_TYPE uint8_t
 #define DATA_STYPE int8_t
-#define SHIFT 0
 #else
 #error unsupported data size
 #endif
@@ -62,19 +58,19 @@
 #endif
 
 static inline RES_TYPE
-glue(glue(cpu_ld, USUFFIX), MEMSUFFIX)(CPUArchState *env, abi_ptr ptr)
+glue(glue(cpu_ld, USUFFIX), MEMSUFFIX)(CPUArchState *env, target_ulong ptr)
 {
 #if !defined(CODE_ACCESS)
     trace_guest_mem_before_exec(
         ENV_GET_CPU(env), ptr,
-        trace_mem_build_info(SHIFT, false, MO_TE, false));
+        trace_mem_build_info(DATA_SIZE, false, MO_TE, false));
 #endif
     return glue(glue(ld, USUFFIX), _p)(g2h(ptr));
 }
 
 static inline RES_TYPE
 glue(glue(glue(cpu_ld, USUFFIX), MEMSUFFIX), _ra)(CPUArchState *env,
-                                                  abi_ptr ptr,
+                                                  target_ulong ptr,
                                                   uintptr_t retaddr)
 {
     RES_TYPE ret;
@@ -86,19 +82,19 @@ glue(glue(glue(cpu_ld, USUFFIX), MEMSUFFIX), _ra)(CPUArchState *env,
 
 #if DATA_SIZE <= 2
 static inline int
-glue(glue(cpu_lds, SUFFIX), MEMSUFFIX)(CPUArchState *env, abi_ptr ptr)
+glue(glue(cpu_lds, SUFFIX), MEMSUFFIX)(CPUArchState *env, target_ulong ptr)
 {
 #if !defined(CODE_ACCESS)
     trace_guest_mem_before_exec(
         ENV_GET_CPU(env), ptr,
-        trace_mem_build_info(SHIFT, true, MO_TE, false));
+        trace_mem_build_info(DATA_SIZE, true, MO_TE, false));
 #endif
     return glue(glue(lds, SUFFIX), _p)(g2h(ptr));
 }
 
 static inline int
 glue(glue(glue(cpu_lds, SUFFIX), MEMSUFFIX), _ra)(CPUArchState *env,
-                                                  abi_ptr ptr,
+                                                  target_ulong ptr,
                                                   uintptr_t retaddr)
 {
     int ret;
@@ -111,20 +107,20 @@ glue(glue(glue(cpu_lds, SUFFIX), MEMSUFFIX), _ra)(CPUArchState *env,
 
 #ifndef CODE_ACCESS
 static inline void
-glue(glue(cpu_st, SUFFIX), MEMSUFFIX)(CPUArchState *env, abi_ptr ptr,
+glue(glue(cpu_st, SUFFIX), MEMSUFFIX)(CPUArchState *env, target_ulong ptr,
                                       RES_TYPE v)
 {
 #if !defined(CODE_ACCESS)
     trace_guest_mem_before_exec(
         ENV_GET_CPU(env), ptr,
-        trace_mem_build_info(SHIFT, false, MO_TE, true));
+        trace_mem_build_info(DATA_SIZE, false, MO_TE, true));
 #endif
     glue(glue(st, SUFFIX), _p)(g2h(ptr), v);
 }
 
 static inline void
 glue(glue(glue(cpu_st, SUFFIX), MEMSUFFIX), _ra)(CPUArchState *env,
-                                                  abi_ptr ptr,
+                                                  target_ulong ptr,
                                                   RES_TYPE v,
                                                   uintptr_t retaddr)
 {
@@ -140,4 +136,3 @@ glue(glue(glue(cpu_st, SUFFIX), MEMSUFFIX), _ra)(CPUArchState *env,
 #undef SUFFIX
 #undef USUFFIX
 #undef DATA_SIZE
-#undef SHIFT

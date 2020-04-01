@@ -13,6 +13,8 @@
 #ifndef QEMU_QJSON_H
 #define QEMU_QJSON_H
 
+typedef struct QJSON QJSON;
+
 QJSON *qjson_new(void);
 void qjson_destroy(QJSON *json);
 void json_prop_str(QJSON *json, const char *name, const char *str);

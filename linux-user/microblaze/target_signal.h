@@ -1,6 +1,8 @@
 #ifndef MICROBLAZE_TARGET_SIGNAL_H
 #define MICROBLAZE_TARGET_SIGNAL_H
 
+#include "cpu.h"
+
 /* this struct defines a stack used during syscall handling */
 
 typedef struct target_sigaltstack {
@@ -19,7 +21,10 @@ typedef struct target_sigaltstack {
 #define TARGET_MINSIGSTKSZ    2048
 #define TARGET_SIGSTKSZ       8192
 
-#include "../generic/signal.h"
+static inline abi_ulong get_sp_from_cpustate(CPUMBState *state)
+{
+    return state->regs[1];
+}
 
-#define TARGET_ARCH_HAS_SETUP_FRAME
+
 #endif /* MICROBLAZE_TARGET_SIGNAL_H */

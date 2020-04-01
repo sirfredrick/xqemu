@@ -34,7 +34,9 @@
 #define NMI(obj) \
      INTERFACE_CHECK(NMI, (obj), TYPE_NMI)
 
-typedef struct NMIState NMIState;
+typedef struct NMIState {
+    Object parent_obj;
+} NMIState;
 
 typedef struct NMIClass {
     InterfaceClass parent_class;

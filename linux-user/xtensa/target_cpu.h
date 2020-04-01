@@ -19,8 +19,4 @@ static inline void cpu_set_tls(CPUXtensaState *env, target_ulong newtls)
     env->uregs[THREADPTR] = newtls;
 }
 
-static inline abi_ulong get_sp_from_cpustate(CPUXtensaState *state)
-{
-    return state->regs[1];
-}
 #endif

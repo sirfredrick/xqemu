@@ -886,11 +886,11 @@ static int tight_compress_data(VncState *vs, int stream_id, size_t bytes,
  */
 static void tight_pack24(VncState *vs, uint8_t *buf, size_t count, size_t *ret)
 {
-    uint8_t *buf8;
+    uint32_t *buf32;
     uint32_t pix;
     int rshift, gshift, bshift;
 
-    buf8 = buf;
+    buf32 = (uint32_t *)buf;
 
     if (1 /* FIXME */) {
         rshift = vs->client_pf.rshift;
@@ -907,11 +907,10 @@ static void tight_pack24(VncState *vs, uint8_t *buf, size_t count, size_t *ret)
     }
 
     while (count--) {
-        pix = ldl_he_p(buf8);
+        pix = *buf32++;
         *buf++ = (char)(pix >> rshift);
         *buf++ = (char)(pix >> gshift);
         *buf++ = (char)(pix >> bshift);
-        buf8 += 4;
     }
 }
 
@@ -980,7 +979,7 @@ static int send_mono_rect(VncState *vs, int x, int y,
     }
 #endif
 
-    bytes = DIV_ROUND_UP(w, 8) * h;
+    bytes = (DIV_ROUND_UP(w, 8)) * h;
 
     vnc_write_u8(vs, (stream | VNC_TIGHT_EXPLICIT_FILTER) << 4);
     vnc_write_u8(vs, VNC_TIGHT_FILTER_PALETTE);

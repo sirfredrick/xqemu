@@ -13,10 +13,10 @@
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this program; if not, see <http://www.gnu.org/licenses/>.
  *
  * This file contain code under public domain from the hvdos project:
  * https://github.com/mist64/hvdos
@@ -49,7 +49,7 @@
 #include "qemu-common.h"
 #include "qemu/error-report.h"
 
-#include "hvf_int.h"
+#include "sysemu/hvf.h"
 #include "hvf-i386.h"
 #include "vmcs.h"
 #include "vmx.h"
@@ -65,6 +65,8 @@
 #include <Hypervisor/hv_vmx.h>
 
 #include "exec/address-spaces.h"
+#include "exec/exec-all.h"
+#include "exec/ioport.h"
 #include "hw/i386/apic_internal.h"
 #include "hw/boards.h"
 #include "qemu/main-loop.h"
@@ -72,7 +74,9 @@
 #include "sysemu/sysemu.h"
 #include "target/i386/cpu.h"
 
+pthread_rwlock_t mem_lock = PTHREAD_RWLOCK_INITIALIZER;
 HVFState *hvf_state;
+int hvf_disabled = 1;
 
 static void assert_hvf_ok(hv_return_t ret)
 {
@@ -291,7 +295,6 @@ static void do_hvf_cpu_synchronize_post_reset(CPUState *cpu, run_on_cpu_data arg
 {
     CPUState *cpu_state = cpu;
     hvf_put_registers(cpu_state);
-    wvmcs(cpu_state->hvf_fd, VMCS_ENTRY_CTLS, 0);
     cpu_state->vcpu_dirty = false;
 }
 
@@ -332,7 +335,7 @@ static bool ept_emulation_fault(hvf_slot *slot, uint64_t gpa, uint64_t ept_qual)
         if (slot->flags & HVF_SLOT_LOG) {
             memory_region_set_dirty(slot->region, gpa - slot->start, 1);
             hv_vm_protect((hv_gpaddr_t)slot->start, (size_t)slot->size,
-                          HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC);
+                          HV_MEMORY_READ | HV_MEMORY_WRITE);
         }
     }
 
@@ -361,12 +364,12 @@ static void hvf_set_dirty_tracking(MemoryRegionSection *section, bool on)
     if (on) {
         slot->flags |= HVF_SLOT_LOG;
         hv_vm_protect((hv_gpaddr_t)slot->start, (size_t)slot->size,
-                      HV_MEMORY_READ | HV_MEMORY_EXEC);
+                      HV_MEMORY_READ);
     /* stop tracking region*/
     } else {
         slot->flags &= ~HVF_SLOT_LOG;
         hv_vm_protect((hv_gpaddr_t)slot->start, (size_t)slot->size,
-                      HV_MEMORY_READ | HV_MEMORY_WRITE | HV_MEMORY_EXEC);
+                      HV_MEMORY_READ | HV_MEMORY_WRITE);
     }
 }
 
@@ -397,9 +400,7 @@ static void hvf_log_sync(MemoryListener *listener,
      * sync of dirty pages is handled elsewhere; just make sure we keep
      * tracking the region.
      */
-#ifndef XBOX
     hvf_set_dirty_tracking(section, 1);
-#endif
 }
 
 static void hvf_region_add(MemoryListener *listener,
@@ -502,6 +503,7 @@ void hvf_reset_vcpu(CPUState *cpu) {
     }
 
     hv_vm_sync_tsc(0);
+    cpu->halted = 0;
     hv_vcpu_invalidate_tlb(cpu->hvf_fd);
     hv_vcpu_flush(cpu->hvf_fd);
 }
@@ -584,8 +586,10 @@ int hvf_init_vcpu(CPUState *cpu)
 
     wvmcs(cpu->hvf_fd, VMCS_TPR_THRESHOLD, 0);
 
+    hvf_reset_vcpu(cpu);
+
     x86cpu = X86_CPU(cpu);
-    x86cpu->env.xsave_buf = qemu_memalign(4096, 4096);
+    x86cpu->env.kvm_xsave_buf = qemu_memalign(4096, 4096);
 
     hv_vcpu_enable_native_msr(cpu->hvf_fd, MSR_STAR, 1);
     hv_vcpu_enable_native_msr(cpu->hvf_fd, MSR_LSTAR, 1);
@@ -601,6 +605,11 @@ int hvf_init_vcpu(CPUState *cpu)
     hv_vcpu_enable_native_msr(cpu->hvf_fd, MSR_IA32_SYSENTER_ESP, 1);
 
     return 0;
+}
+
+void hvf_disable(int shouldDisable)
+{
+    hvf_disabled = shouldDisable;
 }
 
 static void hvf_store_events(CPUState *cpu, uint32_t ins_len, uint64_t idtvec_info)
@@ -659,6 +668,8 @@ int hvf_vcpu_exec(CPUState *cpu)
     int ret = 0;
     uint64_t rip = 0;
 
+    cpu->halted = 0;
+
     if (hvf_process_events(cpu)) {
         return EXCP_HLT;
     }
@@ -696,8 +707,6 @@ int hvf_vcpu_exec(CPUState *cpu)
         RFLAGS(env) = rreg(cpu->hvf_fd, HV_X86_RFLAGS);
         env->eflags = RFLAGS(env);
 
-        // printf("rip 0x%llx, exit 0x%llx qual 0x%llx\n", rip, exit_reason, exit_qual);
-
         qemu_mutex_lock_iothread();
 
         update_apic_tpr(cpu);
@@ -732,7 +741,7 @@ int hvf_vcpu_exec(CPUState *cpu)
                 vmx_set_nmi_blocking(cpu);
             }
 
-            slot = hvf_find_overlap_slot(gpa, gpa + 1);
+            slot = hvf_find_overlap_slot(gpa, gpa);
             /* mmio */
             if (ept_emulation_fault(slot, gpa, exit_qual)) {
                 struct x86_decode decode;
@@ -928,7 +937,7 @@ int hvf_vcpu_exec(CPUState *cpu)
     return ret;
 }
 
-bool hvf_allowed;
+static bool hvf_allowed;
 
 static int hvf_accel_init(MachineState *ms)
 {
@@ -936,6 +945,7 @@ static int hvf_accel_init(MachineState *ms)
     hv_return_t ret;
     HVFState *s;
 
+    hvf_disable(0);
     ret = hv_vm_create(HV_VM_DEFAULT);
     assert_hvf_ok(ret);
 

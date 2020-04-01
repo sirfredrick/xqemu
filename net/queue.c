@@ -55,7 +55,7 @@ struct NetQueue {
     uint32_t nq_count;
     NetQueueDeliverFunc *deliver;
 
-    QTAILQ_HEAD(, NetPacket) packets;
+    QTAILQ_HEAD(packets, NetPacket) packets;
 
     unsigned delivering : 1;
 };

@@ -99,7 +99,7 @@ struct UHCIQueue {
     UHCIState *uhci;
     USBEndpoint *ep;
     QTAILQ_ENTRY(UHCIQueue) next;
-    QTAILQ_HEAD(, UHCIAsync) asyncs;
+    QTAILQ_HEAD(asyncs_head, UHCIAsync) asyncs;
     int8_t    valid;
 };
 
@@ -837,7 +837,7 @@ static int uhci_handle_td(UHCIState *s, UHCIQueue *q, uint32_t qh_addr,
         }
         if (!async->done) {
             UHCI_TD last_td;
-            UHCIAsync *last = QTAILQ_LAST(&async->queue->asyncs);
+            UHCIAsync *last = QTAILQ_LAST(&async->queue->asyncs, asyncs_head);
             /*
              * While we are waiting for the current td to complete, the guest
              * may have added more tds to the queue. Note we re-read the td
@@ -858,15 +858,13 @@ static int uhci_handle_td(UHCIState *s, UHCIQueue *q, uint32_t qh_addr,
 
     /* Allocate new packet */
     if (q == NULL) {
-        USBDevice *dev;
-        USBEndpoint *ep;
+        USBDevice *dev = uhci_find_device(s, (td->token >> 8) & 0x7f);
+        USBEndpoint *ep = usb_ep_get(dev, pid, (td->token >> 15) & 0xf);
 
-        dev = uhci_find_device(s, (td->token >> 8) & 0x7f);
-        if (dev == NULL) {
+        if (ep == NULL) {
             return uhci_handle_td_error(s, td, td_addr, USB_RET_NODEV,
                                         int_mask);
         }
-        ep = usb_ep_get(dev, pid, (td->token >> 15) & 0xf);
         q = uhci_queue_new(s, qh_addr, td, ep);
     }
     async = uhci_async_alloc(q, td_addr);
@@ -1058,8 +1056,8 @@ static void uhci_process_frame(UHCIState *s)
                 link = qh.link;
             } else {
                 /* QH with elements */
-                curr_qh = link;
-                link = qh.el_link;
+            	curr_qh = link;
+            	link = qh.el_link;
             }
             continue;
         }

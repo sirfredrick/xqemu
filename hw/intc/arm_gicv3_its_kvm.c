@@ -103,7 +103,7 @@ static void kvm_arm_its_realize(DeviceState *dev, Error **errp)
 
     /* register the base address */
     kvm_arm_register_device(&s->iomem_its_cntrl, -1, KVM_DEV_ARM_VGIC_GRP_ADDR,
-                            KVM_VGIC_ITS_ADDR_TYPE, s->dev_fd, 0);
+                            KVM_VGIC_ITS_ADDR_TYPE, s->dev_fd);
 
     gicv3_its_init_mmio(s, NULL);
 
@@ -211,7 +211,7 @@ static void kvm_arm_its_reset(DeviceState *dev)
         return;
     }
 
-    warn_report("ITS KVM: full reset is not supported by the host kernel");
+    error_report("ITS KVM: full reset is not supported by the host kernel");
 
     if (!kvm_device_check_attr(s->dev_fd, KVM_DEV_ARM_VGIC_GRP_ITS_REGS,
                                GITS_CTLR)) {

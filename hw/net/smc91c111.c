@@ -11,7 +11,6 @@
 #include "hw/sysbus.h"
 #include "net/net.h"
 #include "hw/devices.h"
-#include "qemu/log.h"
 /* For crc32 */
 #include <zlib.h>
 
@@ -362,14 +361,10 @@ static void smc91c111_writeb(void *opaque, hwaddr offset,
             SET_HIGH(gpr, value);
             return;
         case 12: /* Control */
-            if (value & 1) {
-                qemu_log_mask(LOG_UNIMP,
-                              "smc91c111: EEPROM store not implemented\n");
-            }
-            if (value & 2) {
-                qemu_log_mask(LOG_UNIMP,
-                              "smc91c111: EEPROM reload not implemented\n");
-            }
+            if (value & 1)
+                fprintf(stderr, "smc91c111:EEPROM store not implemented\n");
+            if (value & 2)
+                fprintf(stderr, "smc91c111:EEPROM reload not implemented\n");
             value &= ~3;
             SET_LOW(ctr, value);
             return;
@@ -483,9 +478,7 @@ static void smc91c111_writeb(void *opaque, hwaddr offset,
         }
         break;
     }
-    qemu_log_mask(LOG_GUEST_ERROR, "smc91c111_write(bank:%d) Illegal register"
-                                   " 0x%" HWADDR_PRIx " = 0x%x\n",
-                  s->bank, offset, value);
+    hw_error("smc91c111_write: Bad reg %d:%x\n", s->bank, (int)offset);
 }
 
 static uint32_t smc91c111_readb(void *opaque, hwaddr offset)
@@ -628,39 +621,41 @@ static uint32_t smc91c111_readb(void *opaque, hwaddr offset)
         }
         break;
     }
-    qemu_log_mask(LOG_GUEST_ERROR, "smc91c111_read(bank:%d) Illegal register"
-                                   " 0x%" HWADDR_PRIx "\n",
-                  s->bank, offset);
+    hw_error("smc91c111_read: Bad reg %d:%x\n", s->bank, (int)offset);
     return 0;
 }
 
-static uint64_t smc91c111_readfn(void *opaque, hwaddr addr, unsigned size)
+static void smc91c111_writew(void *opaque, hwaddr offset,
+                             uint32_t value)
 {
-    int i;
-    uint32_t val = 0;
+    smc91c111_writeb(opaque, offset, value & 0xff);
+    smc91c111_writeb(opaque, offset + 1, value >> 8);
+}
 
-    for (i = 0; i < size; i++) {
-        val |= smc91c111_readb(opaque, addr + i) << (i * 8);
-    }
+static void smc91c111_writel(void *opaque, hwaddr offset,
+                             uint32_t value)
+{
+    /* 32-bit writes to offset 0xc only actually write to the bank select
+       register (offset 0xe)  */
+    if (offset != 0xc)
+        smc91c111_writew(opaque, offset, value & 0xffff);
+    smc91c111_writew(opaque, offset + 2, value >> 16);
+}
+
+static uint32_t smc91c111_readw(void *opaque, hwaddr offset)
+{
+    uint32_t val;
+    val = smc91c111_readb(opaque, offset);
+    val |= smc91c111_readb(opaque, offset + 1) << 8;
     return val;
 }
 
-static void smc91c111_writefn(void *opaque, hwaddr addr,
-                               uint64_t value, unsigned size)
+static uint32_t smc91c111_readl(void *opaque, hwaddr offset)
 {
-    int i = 0;
-
-    /* 32-bit writes to offset 0xc only actually write to the bank select
-     * register (offset 0xe), so skip the first two bytes we would write.
-     */
-    if (addr == 0xc && size == 4) {
-        i += 2;
-    }
-
-    for (; i < size; i++) {
-        smc91c111_writeb(opaque, addr + i,
-                         extract32(value, i * 8, 8));
-    }
+    uint32_t val;
+    val = smc91c111_readw(opaque, offset);
+    val |= smc91c111_readw(opaque, offset + 2) << 16;
+    return val;
 }
 
 static int smc91c111_can_receive_nc(NetClientState *nc)
@@ -752,10 +747,10 @@ static const MemoryRegionOps smc91c111_mem_ops = {
     /* The special case for 32 bit writes to 0xc means we can't just
      * set .impl.min/max_access_size to 1, unfortunately
      */
-    .read = smc91c111_readfn,
-    .write = smc91c111_writefn,
-    .valid.min_access_size = 1,
-    .valid.max_access_size = 4,
+    .old_mmio = {
+        .read = { smc91c111_readb, smc91c111_readw, smc91c111_readl, },
+        .write = { smc91c111_writeb, smc91c111_writew, smc91c111_writel, },
+    },
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
@@ -766,9 +761,9 @@ static NetClientInfo net_smc91c111_info = {
     .receive = smc91c111_receive,
 };
 
-static void smc91c111_realize(DeviceState *dev, Error **errp)
+static int smc91c111_init1(SysBusDevice *sbd)
 {
-    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
+    DeviceState *dev = DEVICE(sbd);
     smc91c111_state *s = SMC91C111(dev);
 
     memory_region_init_io(&s->mmio, OBJECT(s), &smc91c111_mem_ops, s,
@@ -780,6 +775,7 @@ static void smc91c111_realize(DeviceState *dev, Error **errp)
                           object_get_typename(OBJECT(dev)), dev->id, s);
     qemu_format_nic_info_str(qemu_get_queue(s->nic), s->conf.macaddr.a);
     /* ??? Save/restore.  */
+    return 0;
 }
 
 static Property smc91c111_properties[] = {
@@ -790,8 +786,9 @@ static Property smc91c111_properties[] = {
 static void smc91c111_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
+    SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
 
-    dc->realize = smc91c111_realize;
+    k->init = smc91c111_init1;
     dc->reset = smc91c111_reset;
     dc->vmsd = &vmstate_smc91c111;
     dc->props = smc91c111_properties;

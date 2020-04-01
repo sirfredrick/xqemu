@@ -143,6 +143,4 @@ static inline void blkif_get_x86_64_req(blkif_request_t *dst,
     }
 }
 
-#define XEN_BLKIF_SECTOR_SIZE 512
-
 #endif /* XEN_BLKIF_H */

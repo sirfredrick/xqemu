@@ -5,70 +5,50 @@
  * Copyright (c) 2015 Jannik Vogel
  * Copyright (c) 2018 Matt Borgerson
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 or
+ * (at your option) version 3 of the License.
  *
- * This library is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <assert.h>
-
 #include "qemu/osdep.h"
-#include "qemu/thread.h"
-#include "qemu/main-loop.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
-
-#include "hw/hw.h"
-#include "hw/display/vga.h"
-#include "hw/display/vga_int.h"
+#include "qemu/error-report.h"
+#include <assert.h>
+#include "nv2a.h"
 #include "hw/display/vga_regs.h"
-#include "hw/pci/pci.h"
-#include "cpu.h"
 
-#include "swizzle.h"
+#ifdef __WINNT__
+// HACK: mingw-w64 doesn't provide ffs, for now we just shove it here
+// TODO: decide on a better location
+int ffs(register int valu)
+{
+    register int bit;
 
-#include "hw/xbox/nv2a/nv2a_int.h"
+    if (valu == 0)
+        return 0;
 
-#include "hw/xbox/nv2a/nv2a.h"
+    for (bit = 1; !(valu & 1); bit++)
+        valu >>= 1;
 
+    return bit;
+}
+#endif
 
-#define DEFINE_PROTO(n)                                              \
-    uint64_t n##_read(void *opaque, hwaddr addr, unsigned int size); \
-    void n##_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size);
+DMAObject nv_dma_load(NV2AState *d, hwaddr dma_obj_address);
+void *nv_dma_map(NV2AState *d, hwaddr dma_obj_address, hwaddr *len);
+void nv2a_init(PCIBus *bus, int devfn, MemoryRegion *ram);
 
-DEFINE_PROTO(pmc)
-DEFINE_PROTO(pbus)
-DEFINE_PROTO(pfifo)
-DEFINE_PROTO(prma)
-DEFINE_PROTO(pvideo)
-DEFINE_PROTO(ptimer)
-DEFINE_PROTO(pcounter)
-DEFINE_PROTO(pvpe)
-DEFINE_PROTO(ptv)
-DEFINE_PROTO(prmfb)
-DEFINE_PROTO(prmvio)
-DEFINE_PROTO(pfb)
-DEFINE_PROTO(pstraps)
-DEFINE_PROTO(pgraph)
-DEFINE_PROTO(pcrtc)
-DEFINE_PROTO(prmcio)
-DEFINE_PROTO(pramdac)
-DEFINE_PROTO(prmdio)
-// DEFINE_PROTO(pramin)
-DEFINE_PROTO(user)
-
-#undef DEFINE_PROTO
-
-static void update_irq(NV2AState *d)
+void update_irq(NV2AState *d)
 {
     /* PFIFO */
     if (d->pfifo.pending_interrupts & d->pfifo.enabled_interrupts) {
@@ -99,45 +79,102 @@ static void update_irq(NV2AState *d)
     }
 }
 
-static DMAObject nv_dma_load(NV2AState *d, hwaddr dma_obj_address)
+DMAObject nv_dma_load(NV2AState *d, hwaddr dma_obj_address)
 {
     assert(dma_obj_address < memory_region_size(&d->ramin));
 
-    uint32_t *dma_obj = (uint32_t *)(d->ramin_ptr + dma_obj_address);
+    uint32_t *dma_obj = (uint32_t*)(d->ramin_ptr + dma_obj_address);
     uint32_t flags = ldl_le_p(dma_obj);
     uint32_t limit = ldl_le_p(dma_obj + 1);
     uint32_t frame = ldl_le_p(dma_obj + 2);
 
     return (DMAObject){
-        .dma_class  = GET_MASK(flags, NV_DMA_CLASS),
+        .dma_class = GET_MASK(flags, NV_DMA_CLASS),
         .dma_target = GET_MASK(flags, NV_DMA_TARGET),
-        .address    = (frame & NV_DMA_ADDRESS) | GET_MASK(flags, NV_DMA_ADJUST),
-        .limit      = limit,
+        .address = (frame & NV_DMA_ADDRESS) | GET_MASK(flags, NV_DMA_ADJUST),
+        .limit = limit,
     };
 }
 
-static void *nv_dma_map(NV2AState *d, hwaddr dma_obj_address, hwaddr *len)
+void *nv_dma_map(NV2AState *d, hwaddr dma_obj_address, hwaddr *len)
 {
+    assert(dma_obj_address < memory_region_size(&d->ramin));
+
     DMAObject dma = nv_dma_load(d, dma_obj_address);
 
     /* TODO: Handle targets and classes properly */
-    NV2A_DPRINTF("dma_map %" HWADDR_PRIx " - %x, %x, %" HWADDR_PRIx " %" HWADDR_PRIx "\n",
-                 dma_obj_address,
+    NV2A_DPRINTF("dma_map %x, %x, %" HWADDR_PRIx " %" HWADDR_PRIx "\n",
                  dma.dma_class, dma.dma_target, dma.address, dma.limit);
 
     dma.address &= 0x07FFFFFF;
 
-    assert(dma.address < memory_region_size(d->vram));
     // assert(dma.address + dma.limit < memory_region_size(d->vram));
     *len = dma.limit;
     return d->vram_ptr + dma.address;
 }
 
+#define STUB 0
+
+#if STUB
+void *pfifo_puller_thread(void *opaque) { return NULL; }
+void pgraph_init(NV2AState *d){}
+static void pfifo_run_pusher(NV2AState *d){}
+void pgraph_destroy(PGRAPHState *pg){}
+static uint8_t cliptobyte(int x)
+{
+    return (uint8_t)((x < 0) ? 0 : ((x > 255) ? 255 : x));
+}
+static void convert_yuy2_to_rgb(const uint8_t *line, unsigned int ix,
+                                uint8_t *r, uint8_t *g, uint8_t* b) {
+    int c, d, e;
+    c = (int)line[ix * 2] - 16;
+    if (ix % 2) {
+        d = (int)line[ix * 2 - 1] - 128;
+        e = (int)line[ix * 2 + 1] - 128;
+    } else {
+        d = (int)line[ix * 2 + 1] - 128;
+        e = (int)line[ix * 2 + 3] - 128;
+    }
+    *r = cliptobyte((298 * c + 409 * e + 128) >> 8);
+    *g = cliptobyte((298 * c - 100 * d - 208 * e + 128) >> 8);
+    *b = cliptobyte((298 * c + 516 * d + 128) >> 8);
+}
+#endif
+
+#define DEFINE_PROTO(prefix) \
+    uint64_t prefix ## _read(void *opaque, hwaddr addr, unsigned int size); \
+    void prefix ## _write(void *opaque, hwaddr addr, uint64_t val, unsigned int size);
+
+DEFINE_PROTO(pmc)
+DEFINE_PROTO(pbus)
+DEFINE_PROTO(pfifo)
+DEFINE_PROTO(prma)
+DEFINE_PROTO(pvideo)
+DEFINE_PROTO(ptimer)
+DEFINE_PROTO(pcounter)
+DEFINE_PROTO(pvpe)
+DEFINE_PROTO(ptv)
+DEFINE_PROTO(prmfb)
+DEFINE_PROTO(prmvio)
+DEFINE_PROTO(pfb)
+DEFINE_PROTO(pstraps)
+DEFINE_PROTO(pgraph)
+DEFINE_PROTO(pcrtc)
+DEFINE_PROTO(prmcio)
+DEFINE_PROTO(pramdac)
+DEFINE_PROTO(prmdio)
+DEFINE_PROTO(pramin)
+DEFINE_PROTO(user)
+
+#undef DEFINE_PROTO
+
 #include "nv2a_pbus.c"
 #include "nv2a_pcrtc.c"
 #include "nv2a_pfb.c"
+#if !STUB
 #include "nv2a_pgraph.c"
 #include "nv2a_pfifo.c"
+#endif
 #include "nv2a_pmc.c"
 #include "nv2a_pramdac.c"
 #include "nv2a_prmcio.c"
@@ -147,72 +184,96 @@ static void *nv_dma_map(NV2AState *d, hwaddr dma_obj_address, hwaddr *len)
 #include "nv2a_stubs.c"
 #include "nv2a_user.c"
 
-#define ENTRY(NAME, OFFSET, SIZE, RDFUNC, WRFUNC)      \
-    [NV_##NAME] = {                                    \
-        .name   = #NAME,                               \
-        .offset = OFFSET,                              \
-        .size   = SIZE,                                \
-        .ops    = { .read = RDFUNC, .write = WRFUNC }, \
-    }
+#if STUB
+void pgraph_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
+{
+    reg_log_write(NV_PGRAPH, addr, val);
+}
+
+uint64_t pgraph_read(void *opaque, 
+                                   hwaddr addr, unsigned int size)
+{
+    reg_log_read(NV_PGRAPH, addr, 0);
+    return 0;
+}
+
+void pfifo_write(void *opaque, hwaddr addr, uint64_t val, unsigned int size)
+{
+    reg_log_write(NV_PFIFO, addr, val);
+}
+
+uint64_t pfifo_read(void *opaque, 
+                                   hwaddr addr, unsigned int size)
+{
+    reg_log_read(NV_PFIFO, addr, 0);
+    return 0;
+}
+#endif
 
 const struct NV2ABlockInfo blocktable[] = {
-    ENTRY(PMC,      0x000000, 0x001000, pmc_read,      pmc_write),
-    ENTRY(PBUS,     0x001000, 0x001000, pbus_read,     pbus_write),
-    ENTRY(PFIFO,    0x002000, 0x002000, pfifo_read,    pfifo_write),
-    ENTRY(PRMA,     0x007000, 0x001000, prma_read,     prma_write),
-    ENTRY(PVIDEO,   0x008000, 0x001000, pvideo_read,   pvideo_write),
-    ENTRY(PTIMER,   0x009000, 0x001000, ptimer_read,   ptimer_write),
-    ENTRY(PCOUNTER, 0x00a000, 0x001000, pcounter_read, pcounter_write),
-    ENTRY(PVPE,     0x00b000, 0x001000, pvpe_read,     pvpe_write),
-    ENTRY(PTV,      0x00d000, 0x001000, ptv_read,      ptv_write),
-    ENTRY(PRMFB,    0x0a0000, 0x020000, prmfb_read,    prmfb_write),
-    ENTRY(PRMVIO,   0x0c0000, 0x001000, prmvio_read,   prmvio_write),
-    ENTRY(PFB,      0x100000, 0x001000, pfb_read,      pfb_write),
-    ENTRY(PSTRAPS,  0x101000, 0x001000, pstraps_read,  pstraps_write),
-    ENTRY(PGRAPH,   0x400000, 0x002000, pgraph_read,   pgraph_write),
-    ENTRY(PCRTC,    0x600000, 0x001000, pcrtc_read,    pcrtc_write),
-    ENTRY(PRMCIO,   0x601000, 0x001000, prmcio_read,   prmcio_write),
-    ENTRY(PRAMDAC,  0x680000, 0x001000, pramdac_read,  pramdac_write),
-    ENTRY(PRMDIO,   0x681000, 0x001000, prmdio_read,   prmdio_write),
-    // ENTRY(PRAMIN,   0x700000, 0x100000, pramin_read,   pramin_write),
-    ENTRY(USER,     0x800000, 0x800000, user_read,     user_write),
+
+#define ENTRY(NAME, OFFSET, SIZE, RDFUNC, WRFUNC) \
+    [ NV_ ## NAME ]  = { \
+        .name = #NAME, .offset = OFFSET, .size = SIZE, \
+        .ops = { .read = RDFUNC, .write = WRFUNC }, \
+    }, \
+
+    ENTRY(PMC,      0x000000, 0x001000, pmc_read,      pmc_write)
+    ENTRY(PBUS,     0x001000, 0x001000, pbus_read,     pbus_write)
+    ENTRY(PFIFO,    0x002000, 0x002000, pfifo_read,    pfifo_write)
+    ENTRY(PRMA,     0x007000, 0x001000, prma_read,     prma_write)
+    ENTRY(PVIDEO,   0x008000, 0x001000, pvideo_read,   pvideo_write)
+    ENTRY(PTIMER,   0x009000, 0x001000, ptimer_read,   ptimer_write)
+    ENTRY(PCOUNTER, 0x00a000, 0x001000, pcounter_read, pcounter_write)
+    ENTRY(PVPE,     0x00b000, 0x001000, pvpe_read,     pvpe_write)
+    ENTRY(PTV,      0x00d000, 0x001000, ptv_read,      ptv_write)
+    ENTRY(PRMFB,    0x0a0000, 0x020000, prmfb_read,    prmfb_write)
+    ENTRY(PRMVIO,   0x0c0000, 0x001000, prmvio_read,   prmvio_write)
+    ENTRY(PFB,      0x100000, 0x001000, pfb_read,      pfb_write)
+    ENTRY(PSTRAPS,  0x101000, 0x001000, pstraps_read,  pstraps_write)
+    ENTRY(PGRAPH,   0x400000, 0x002000, pgraph_read,   pgraph_write)
+    ENTRY(PCRTC,    0x600000, 0x001000, pcrtc_read,    pcrtc_write)
+    ENTRY(PRMCIO,   0x601000, 0x001000, prmcio_read,   prmcio_write)
+    ENTRY(PRAMDAC,  0x680000, 0x001000, pramdac_read,  pramdac_write)
+    ENTRY(PRMDIO,   0x681000, 0x001000, prmdio_read,   prmdio_write)
+    // ENTRY(PRAMIN,   0x700000, 0x100000, pramin_read,   pramin_write)
+    ENTRY(USER,     0x800000, 0x800000, user_read,     user_write)
+#undef ENTRY
 };
 
-#undef ENTRY
+const int blocktable_len = ARRAY_SIZE(blocktable);
 
-static const char* nv2a_reg_names[] = {};
+// static const char* nv2a_reg_names[] = {};
 
-static void reg_log_read(int block, hwaddr addr, uint64_t val)
-{
+void reg_log_read(int block, hwaddr addr, uint64_t val) {
     if (blocktable[block].name) {
-        hwaddr naddr = blocktable[block].offset + addr;
-        if (naddr < ARRAY_SIZE(nv2a_reg_names) && nv2a_reg_names[naddr]) {
-            NV2A_DPRINTF("%s: read [%s] -> 0x%" PRIx64 "\n",
-                    blocktable[block].name, nv2a_reg_names[naddr], val);
-        } else {
+        // hwaddr naddr = blocktable[block].offset + addr;
+        // if (naddr < ARRAY_SIZE(nv2a_reg_names) && nv2a_reg_names[naddr]) {
+        //     NV2A_DPRINTF("%s: read [%s] -> 0x%" PRIx64 "\n",
+        //             blocktable[block].name, nv2a_reg_names[naddr], val);
+        // } else {
             NV2A_DPRINTF("%s: read [%" HWADDR_PRIx "] -> 0x%" PRIx64 "\n",
-                         blocktable[block].name, addr, val);
-        }
+                    blocktable[block].name, addr, val);
+        // }
     } else {
         NV2A_DPRINTF("(%d?): read [%" HWADDR_PRIx "] -> 0x%" PRIx64 "\n",
-                     block, addr, val);
+                block, addr, val);
     }
 }
 
-static void reg_log_write(int block, hwaddr addr, uint64_t val)
-{
+void reg_log_write(int block, hwaddr addr, uint64_t val) {
     if (blocktable[block].name) {
-        hwaddr naddr = blocktable[block].offset + addr;
-        if (naddr < ARRAY_SIZE(nv2a_reg_names) && nv2a_reg_names[naddr]) {
-            NV2A_DPRINTF("%s: [%s] = 0x%" PRIx64 "\n",
-                    blocktable[block].name, nv2a_reg_names[naddr], val);
-        } else {
+        // hwaddr naddr = blocktable[block].offset + addr;
+        // if (naddr < ARRAY_SIZE(nv2a_reg_names) && nv2a_reg_names[naddr]) {
+        //     NV2A_DPRINTF("%s: [%s] = 0x%" PRIx64 "\n",
+        //             blocktable[block].name, nv2a_reg_names[naddr], val);
+        // } else {
             NV2A_DPRINTF("%s: [%" HWADDR_PRIx "] = 0x%" PRIx64 "\n",
-                         blocktable[block].name, addr, val);
-        }
+                    blocktable[block].name, addr, val);
+        // }
     } else {
         NV2A_DPRINTF("(%d?): [%" HWADDR_PRIx "] = 0x%" PRIx64 "\n",
-                     block, addr, val);
+                block, addr, val);
     }
 }
 
@@ -317,37 +378,10 @@ static void nv2a_overlay_draw_line(VGACommonState *vga, uint8_t *line, int y)
 
 static int nv2a_get_bpp(VGACommonState *s)
 {
-    NV2AState *d = container_of(s, NV2AState, vga);
-
-    int depth = s->cr[0x28] & 3;
-
-    int bpp;
-    switch (depth) {
-    case 0:
-        /* FIXME: This case is sometimes hit during early Xbox startup.
-         *        Presumably a race-condition where VGA isn't initialized, yet.
-         *        `bpp = 0` mimics old code that did `bpp = depth * 8;`.
-         *        This works around the issue of this mode being unhandled.
-         *        However, QEMU VGA uses a 4bpp mode if `bpp = 0`.
-         *        We don't know if Xbox hardware would do the same. */
-        bpp = 0;
-        break;
-    case 2:
-        bpp = d->pramdac.general_control &
-              NV_PRAMDAC_GENERAL_CONTROL_ALT_MODE_SEL ? 16 : 15;
-        break;
-    case 3:
-        bpp = 32;
-        break;
-    default:
-        /* This is only a fallback path */
-        bpp = depth * 8;
-        fprintf(stderr, "Unknown VGA depth: %d\n", depth);
-        assert(false);
-        break;
+    if ((s->cr[0x28] & 3) == 3) {
+        return 32;
     }
-
-    return bpp;
+    return (s->cr[0x28] & 3) * 8;
 }
 
 static void nv2a_get_offsets(VGACommonState *s,
@@ -368,8 +402,8 @@ static void nv2a_get_offsets(VGACommonState *s,
     *pstart_addr = start_addr;
 
     line_compare = s->cr[VGA_CRTC_LINE_COMPARE] |
-                   ((s->cr[VGA_CRTC_OVERFLOW] & 0x10) << 4) |
-                   ((s->cr[VGA_CRTC_MAX_SCAN] & 0x40) << 3);
+        ((s->cr[VGA_CRTC_OVERFLOW] & 0x10) << 4) |
+        ((s->cr[VGA_CRTC_MAX_SCAN] & 0x40) << 3);
     *pline_compare = line_compare;
 }
 
@@ -417,16 +451,12 @@ static void nv2a_init_memory(NV2AState *d, MemoryRegion *ram)
     d->vga.vram_ptr = memory_region_get_ram_ptr(&d->vga.vram);
     vga_dirty_log_start(&d->vga);
 
+
     pgraph_init(d);
 
     /* fire up puller */
     qemu_thread_create(&d->pfifo.puller_thread, "nv2a.puller_thread",
                        pfifo_puller_thread,
-                       d, QEMU_THREAD_JOINABLE);
-
-    /* fire up pusher */
-    qemu_thread_create(&d->pfifo.pusher_thread, "nv2a.pusher_thread",
-                       pfifo_pusher_thread,
                        d, QEMU_THREAD_JOINABLE);
 }
 
@@ -437,9 +467,6 @@ static void nv2a_realize(PCIDevice *dev, Error **errp)
 
     d = NV2A_DEVICE(dev);
 
-    /* setting subsystem ids again, see comment in nv2a_class_init() */
-    pci_set_word(dev->config + PCI_SUBSYSTEM_VENDOR_ID, 0);
-    pci_set_word(dev->config + PCI_SUBSYSTEM_ID, 0);
     dev->config[PCI_INTERRUPT_PIN] = 0x01;
 
     d->pcrtc.start = 0;
@@ -457,7 +484,7 @@ static void nv2a_realize(PCIDevice *dev, Error **errp)
     /* seems to start in color mode */
     vga->msr = VGA_MIS_COLOR;
 
-    vga_common_init(vga, OBJECT(dev));
+    vga_common_init(vga, OBJECT(dev), false); // FIXME: true or false? idk
     vga->get_bpp = nv2a_get_bpp;
     vga->get_offsets = nv2a_get_offsets;
     // vga->overlay_draw_line = nv2a_overlay_draw_line;
@@ -479,11 +506,22 @@ static void nv2a_realize(PCIDevice *dev, Error **errp)
                                     &d->block_mmio[i]);
     }
 
-    qemu_mutex_init(&d->pfifo.lock);
-    qemu_cond_init(&d->pfifo.puller_cond);
-    qemu_cond_init(&d->pfifo.pusher_cond);
+    /* init fifo cache1 */
+    qemu_spin_init(&d->pfifo.cache1.alloc_lock);
+    qemu_mutex_init(&d->pfifo.cache1.cache_lock);
+    qemu_cond_init(&d->pfifo.cache1.cache_cond);
+    QSIMPLEQ_INIT(&d->pfifo.cache1.cache);
+    QSIMPLEQ_INIT(&d->pfifo.cache1.working_cache);
+    QSIMPLEQ_INIT(&d->pfifo.cache1.available_entries);
+    QSIMPLEQ_INIT(&d->pfifo.cache1.retired_entries);
 
-    d->pfifo.regs[NV_PFIFO_CACHE1_STATUS] |= NV_PFIFO_CACHE1_STATUS_LOW_MARK;
+    /* Pre-allocate memory for CacheEntry objects */
+    for (i=0; i < 100000; i++) {
+        CacheEntry *command = g_malloc0(sizeof(CacheEntry));
+        assert(command != NULL);
+        QSIMPLEQ_INSERT_TAIL(&d->pfifo.cache1.available_entries,
+                             command, entry);
+    }
 }
 
 static void nv2a_exitfn(PCIDevice *dev)
@@ -492,11 +530,18 @@ static void nv2a_exitfn(PCIDevice *dev)
     d = NV2A_DEVICE(dev);
 
     d->exiting = true;
-
-    qemu_cond_broadcast(&d->pfifo.puller_cond);
-    qemu_cond_broadcast(&d->pfifo.pusher_cond);
+    qemu_cond_signal(&d->pfifo.cache1.cache_cond);
     qemu_thread_join(&d->pfifo.puller_thread);
-    qemu_thread_join(&d->pfifo.pusher_thread);
+
+    qemu_mutex_destroy(&d->pfifo.cache1.cache_lock);
+    qemu_cond_destroy(&d->pfifo.cache1.cache_cond);
+
+    /* Release allocated CacheEntry objects */
+    while (!QSIMPLEQ_EMPTY(&d->pfifo.cache1.available_entries)) {
+        CacheEntry *entry = QSIMPLEQ_FIRST(&d->pfifo.cache1.available_entries);
+        QSIMPLEQ_REMOVE_HEAD(&d->pfifo.cache1.available_entries, entry);
+        free(entry);
+    }
 
     pgraph_destroy(&d->pgraph);
 }
@@ -508,13 +553,8 @@ static void nv2a_class_init(ObjectClass *klass, void *data)
 
     k->vendor_id = PCI_VENDOR_ID_NVIDIA;
     k->device_id = PCI_DEVICE_ID_NVIDIA_GEFORCE_NV2A;
-    k->revision  = 0xA1;
-    k->class_id  = PCI_CLASS_DISPLAY_VGA;
-    /* When both subsystem ids are set to 0, QEMU sets them to its own
-     * default values. However we set them anyway in case upstream decides
-     * to change this behavior. */
-    k->subsystem_vendor_id = 0;
-    k->subsystem_id = 0;
+    k->revision  = 161;
+    k->class_id  = PCI_CLASS_DISPLAY_3D;
     k->realize   = nv2a_realize;
     k->exit      = nv2a_exitfn;
 

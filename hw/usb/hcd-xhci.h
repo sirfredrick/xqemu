@@ -140,7 +140,6 @@ typedef struct XHCIPort {
 typedef struct XHCISlot {
     bool enabled;
     bool addressed;
-    uint16_t intr;
     dma_addr_t ctx;
     USBPort *uport;
     XHCIEPContext *eps[31];

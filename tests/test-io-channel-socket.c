@@ -49,7 +49,6 @@ static void test_io_channel_set_socket_bufs(QIOChannel *src,
 
 static void test_io_channel_setup_sync(SocketAddress *listen_addr,
                                        SocketAddress *connect_addr,
-                                       QIOChannel **srv,
                                        QIOChannel **src,
                                        QIOChannel **dst)
 {
@@ -79,7 +78,7 @@ static void test_io_channel_setup_sync(SocketAddress *listen_addr,
 
     test_io_channel_set_socket_bufs(*src, *dst);
 
-    *srv = QIO_CHANNEL(lioc);
+    object_unref(OBJECT(lioc));
 }
 
 
@@ -100,7 +99,6 @@ static void test_io_channel_complete(QIOTask *task,
 
 static void test_io_channel_setup_async(SocketAddress *listen_addr,
                                         SocketAddress *connect_addr,
-                                        QIOChannel **srv,
                                         QIOChannel **src,
                                         QIOChannel **dst)
 {
@@ -148,21 +146,9 @@ static void test_io_channel_setup_async(SocketAddress *listen_addr,
     qio_channel_set_delay(*src, false);
     test_io_channel_set_socket_bufs(*src, *dst);
 
-    *srv = QIO_CHANNEL(lioc);
+    object_unref(OBJECT(lioc));
 
     g_main_loop_unref(data.loop);
-}
-
-
-static void test_io_channel_socket_path_exists(SocketAddress *addr,
-                                               bool expectExists)
-{
-    if (addr->type != SOCKET_ADDRESS_TYPE_UNIX) {
-        return;
-    }
-
-    g_assert(g_file_test(addr->u.q_unix.path,
-                         G_FILE_TEST_EXISTS) == expectExists);
 }
 
 
@@ -171,11 +157,10 @@ static void test_io_channel(bool async,
                             SocketAddress *connect_addr,
                             bool passFD)
 {
-    QIOChannel *src, *dst, *srv;
+    QIOChannel *src, *dst;
     QIOChannelTest *test;
     if (async) {
-        test_io_channel_setup_async(listen_addr, connect_addr,
-                                    &srv, &src, &dst);
+        test_io_channel_setup_async(listen_addr, connect_addr, &src, &dst);
 
         g_assert(!passFD ||
                  qio_channel_has_feature(src, QIO_CHANNEL_FEATURE_FD_PASS));
@@ -184,25 +169,14 @@ static void test_io_channel(bool async,
         g_assert(qio_channel_has_feature(src, QIO_CHANNEL_FEATURE_SHUTDOWN));
         g_assert(qio_channel_has_feature(dst, QIO_CHANNEL_FEATURE_SHUTDOWN));
 
-        test_io_channel_socket_path_exists(listen_addr, true);
-
         test = qio_channel_test_new();
         qio_channel_test_run_threads(test, true, src, dst);
         qio_channel_test_validate(test);
 
-        test_io_channel_socket_path_exists(listen_addr, true);
-
-        /* unref without close, to ensure finalize() cleans up */
-
         object_unref(OBJECT(src));
         object_unref(OBJECT(dst));
-        test_io_channel_socket_path_exists(listen_addr, true);
 
-        object_unref(OBJECT(srv));
-        test_io_channel_socket_path_exists(listen_addr, false);
-
-        test_io_channel_setup_async(listen_addr, connect_addr,
-                                    &srv, &src, &dst);
+        test_io_channel_setup_async(listen_addr, connect_addr, &src, &dst);
 
         g_assert(!passFD ||
                  qio_channel_has_feature(src, QIO_CHANNEL_FEATURE_FD_PASS));
@@ -215,24 +189,10 @@ static void test_io_channel(bool async,
         qio_channel_test_run_threads(test, false, src, dst);
         qio_channel_test_validate(test);
 
-        /* close before unref, to ensure finalize copes with already closed */
-
-        qio_channel_close(src, &error_abort);
-        qio_channel_close(dst, &error_abort);
-        test_io_channel_socket_path_exists(listen_addr, true);
-
         object_unref(OBJECT(src));
         object_unref(OBJECT(dst));
-        test_io_channel_socket_path_exists(listen_addr, true);
-
-        qio_channel_close(srv, &error_abort);
-        test_io_channel_socket_path_exists(listen_addr, false);
-
-        object_unref(OBJECT(srv));
-        test_io_channel_socket_path_exists(listen_addr, false);
     } else {
-        test_io_channel_setup_sync(listen_addr, connect_addr,
-                                   &srv, &src, &dst);
+        test_io_channel_setup_sync(listen_addr, connect_addr, &src, &dst);
 
         g_assert(!passFD ||
                  qio_channel_has_feature(src, QIO_CHANNEL_FEATURE_FD_PASS));
@@ -241,25 +201,14 @@ static void test_io_channel(bool async,
         g_assert(qio_channel_has_feature(src, QIO_CHANNEL_FEATURE_SHUTDOWN));
         g_assert(qio_channel_has_feature(dst, QIO_CHANNEL_FEATURE_SHUTDOWN));
 
-        test_io_channel_socket_path_exists(listen_addr, true);
-
         test = qio_channel_test_new();
         qio_channel_test_run_threads(test, true, src, dst);
         qio_channel_test_validate(test);
 
-        test_io_channel_socket_path_exists(listen_addr, true);
-
-        /* unref without close, to ensure finalize() cleans up */
-
         object_unref(OBJECT(src));
         object_unref(OBJECT(dst));
-        test_io_channel_socket_path_exists(listen_addr, true);
 
-        object_unref(OBJECT(srv));
-        test_io_channel_socket_path_exists(listen_addr, false);
-
-        test_io_channel_setup_sync(listen_addr, connect_addr,
-                                   &srv, &src, &dst);
+        test_io_channel_setup_sync(listen_addr, connect_addr, &src, &dst);
 
         g_assert(!passFD ||
                  qio_channel_has_feature(src, QIO_CHANNEL_FEATURE_FD_PASS));
@@ -272,23 +221,8 @@ static void test_io_channel(bool async,
         qio_channel_test_run_threads(test, false, src, dst);
         qio_channel_test_validate(test);
 
-        test_io_channel_socket_path_exists(listen_addr, true);
-
-        /* close before unref, to ensure finalize copes with already closed */
-
-        qio_channel_close(src, &error_abort);
-        qio_channel_close(dst, &error_abort);
-        test_io_channel_socket_path_exists(listen_addr, true);
-
         object_unref(OBJECT(src));
         object_unref(OBJECT(dst));
-        test_io_channel_socket_path_exists(listen_addr, true);
-
-        qio_channel_close(srv, &error_abort);
-        test_io_channel_socket_path_exists(listen_addr, false);
-
-        object_unref(OBJECT(srv));
-        test_io_channel_socket_path_exists(listen_addr, false);
     }
 }
 
@@ -382,6 +316,7 @@ static void test_io_channel_unix(bool async)
 
     qapi_free_SocketAddress(listen_addr);
     qapi_free_SocketAddress(connect_addr);
+    g_assert(g_file_test(TEST_SOCKET, G_FILE_TEST_EXISTS) == FALSE);
 }
 
 
@@ -400,7 +335,7 @@ static void test_io_channel_unix_fd_pass(void)
 {
     SocketAddress *listen_addr = g_new0(SocketAddress, 1);
     SocketAddress *connect_addr = g_new0(SocketAddress, 1);
-    QIOChannel *src, *dst, *srv;
+    QIOChannel *src, *dst;
     int testfd;
     int fdsend[3];
     int *fdrecv = NULL;
@@ -424,7 +359,7 @@ static void test_io_channel_unix_fd_pass(void)
     connect_addr->type = SOCKET_ADDRESS_TYPE_UNIX;
     connect_addr->u.q_unix.path = g_strdup(TEST_SOCKET);
 
-    test_io_channel_setup_sync(listen_addr, connect_addr, &srv, &src, &dst);
+    test_io_channel_setup_sync(listen_addr, connect_addr, &src, &dst);
 
     memcpy(bufsend, "Hello World", G_N_ELEMENTS(bufsend));
 
@@ -477,7 +412,6 @@ static void test_io_channel_unix_fd_pass(void)
 
     object_unref(OBJECT(src));
     object_unref(OBJECT(dst));
-    object_unref(OBJECT(srv));
     qapi_free_SocketAddress(listen_addr);
     qapi_free_SocketAddress(connect_addr);
     unlink(TEST_SOCKET);

@@ -23,7 +23,6 @@
 #ifndef ALLWINNER_EMAC_H
 #define ALLWINNER_EMAC_H
 
-#include "qemu/units.h"
 #include "net/net.h"
 #include "qemu/fifo8.h"
 #include "hw/net/mii.h"
@@ -126,8 +125,8 @@
 #define EMAC_INT_RX         (1 << 8)
 
 /* Due to lack of specifications, size of fifos is chosen arbitrarily */
-#define TX_FIFO_SIZE        (4 * KiB)
-#define RX_FIFO_SIZE        (32 * KiB)
+#define TX_FIFO_SIZE        (4 * 1024)
+#define RX_FIFO_SIZE        (32 * 1024)
 
 #define NUM_TX_FIFOS        2
 #define RX_HDR_SIZE         8

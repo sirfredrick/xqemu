@@ -4,18 +4,18 @@
  * Copyright (c) 2015 espes
  * Copyright (c) 2015 Jannik Vogel
  *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 2 of the License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 or
+ * (at your option) version 3 of the License.
  *
- * This library is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library; if not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "qemu/osdep.h"
@@ -246,31 +246,26 @@ static void append_skinning_code(QString* str, bool mix,
     } else {
         qstring_append_fmt(str, "%s %s = %s(0.0);\n", type, output, type);
         if (mix) {
-            /* Generated final weight (like GL_WEIGHT_SUM_UNITY_ARB) */
-            qstring_append(str, "{\n"
-                                "  float weight_i;\n"
-                                "  float weight_n = 1.0;\n");
-            int i;
-            for (i = 0; i < count; i++) {
-                if (i < (count - 1)) {
-                    char c = "xyzw"[i];
-                    qstring_append_fmt(str, "  weight_i = weight.%c;\n"
-                                            "  weight_n -= weight_i;\n",
-                                       c);
-                } else {
-                    qstring_append(str, "  weight_i = weight_n;\n");
-                }
-                qstring_append_fmt(str, "  %s += (%s * %s%d).%s * weight_i;\n",
-                                   output, input, matrix, i, swizzle);
+            /* Tweening */
+            if (count == 2) {
+                qstring_append_fmt(str,
+                                   "%s += mix((%s * %s1).%s,\n"
+                                   "          (%s * %s0).%s, weight.x);\n",
+                                   output,
+                                   input, matrix, swizzle,
+                                   input, matrix, swizzle);
+            } else {
+                /* FIXME: Not sure how blend weights are calculated */
+                assert(false);
             }
-            qstring_append(str, "}\n");
         } else {
-            /* Individual weights */
+            /* Individual matrices */
             int i;
             for (i = 0; i < count; i++) {
                 char c = "xyzw"[i];
-                qstring_append_fmt(str, "%s += (%s * %s%d).%s * weight.%c;\n",
-                                   output, input, matrix, i, swizzle, c);
+                qstring_append_fmt(str, "%s += (%s * %s%d * weight.%c).%s;\n",
+                                   output, input, matrix, i, c,
+                                   swizzle);
             }
             assert(false); /* FIXME: Untested */
         }
@@ -377,14 +372,14 @@ GLSL_DEFINE(sceneAmbientColor, GLSL_LTCTXA(NV_IGRAPH_XF_LTCTXA_FR_AMB) ".xyz")
         mix = false; count = 0; break;
     case SKINNING_1WEIGHTS:
         mix = true; count = 2; break;
-    case SKINNING_2WEIGHTS2MATRICES:
-        mix = false; count = 2; break;
     case SKINNING_2WEIGHTS:
         mix = true; count = 3; break;
-    case SKINNING_3WEIGHTS3MATRICES:
-        mix = false; count = 3; break;
     case SKINNING_3WEIGHTS:
         mix = true; count = 4; break;
+    case SKINNING_2WEIGHTS2MATRICES:
+        mix = false; count = 2; break;
+    case SKINNING_3WEIGHTS3MATRICES:
+        mix = false; count = 3; break;
     case SKINNING_4WEIGHTS4MATRICES:
         mix = false; count = 4; break;
     default:
@@ -797,7 +792,7 @@ STRUCT_VERTEX_DATA);
 
     /* Return combined header + source */
     qstring_append(header, qstring_get_str(body));
-    qobject_unref(body);
+    QDECREF(body);
     return header;
 
 }
@@ -862,7 +857,7 @@ ShaderBinding* generate_shaders(const ShaderState state)
                                                   "geometry shader");
         glAttachShader(program, geometry_shader);
 
-        qobject_unref(geometry_shader_code);
+        QDECREF(geometry_shader_code);
 
         vtx_prefix = 'v';
     } else {
@@ -876,7 +871,7 @@ ShaderBinding* generate_shaders(const ShaderState state)
                                             qstring_get_str(vertex_shader_code),
                                             "vertex shader");
     glAttachShader(program, vertex_shader);
-    qobject_unref(vertex_shader_code);
+    QDECREF(vertex_shader_code);
 
 
     /* Bind attributes for vertices */
@@ -897,7 +892,7 @@ ShaderBinding* generate_shaders(const ShaderState state)
                                               "fragment shader");
     glAttachShader(program, fragment_shader);
 
-    qobject_unref(fragment_shader_code);
+    QDECREF(fragment_shader_code);
 
 
     /* link the program */
@@ -939,9 +934,9 @@ ShaderBinding* generate_shaders(const ShaderState state)
     ret->gl_primitive_mode = gl_primitive_mode;
 
     /* lookup fragment shader uniforms */
-    for (i = 0; i < 9; i++) {
-        for (j = 0; j < 2; j++) {
-            snprintf(tmp, sizeof(tmp), "c%d_%d", j, i);
+    for (i=0; i<=8; i++) {
+        for (j=0; j<2; j++) {
+            snprintf(tmp, sizeof(tmp), "c_%d_%d", i, j);
             ret->psh_constant_loc[i][j] = glGetUniformLocation(program, tmp);
         }
     }
@@ -989,10 +984,6 @@ ShaderBinding* generate_shaders(const ShaderState state)
         ret->light_local_position_loc[i] = glGetUniformLocation(program, tmp);
         snprintf(tmp, sizeof(tmp), "lightLocalAttenuation%d", i);
         ret->light_local_attenuation_loc[i] = glGetUniformLocation(program, tmp);
-    }
-    for (i = 0; i < 8; i++) {
-        snprintf(tmp, sizeof(tmp), "clipRegion[%d]", i);
-        ret->clip_region_loc[i] = glGetUniformLocation(program, tmp);
     }
 
     return ret;

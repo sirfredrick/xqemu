@@ -1,5 +1,4 @@
 #include "qemu/osdep.h"
-#include "block/qdict.h" /* for qdict_extract_subqdict() */
 #include "qapi/error.h"
 #include "qapi/qapi-commands-misc.h"
 #include "qapi/qmp/qdict.h"
@@ -563,8 +562,8 @@ static void config_parse_qdict_section(QDict *options, QemuOptsList *opts,
     }
 
 out:
-    qobject_unref(subqdict);
-    qobject_unref(list);
+    QDECREF(subqdict);
+    QDECREF(list);
 }
 
 void qemu_config_parse_qdict(QDict *options, QemuOptsList **lists,

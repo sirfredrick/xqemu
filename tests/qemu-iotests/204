@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # Test corner cases with unusual block geometries
 #
@@ -24,6 +24,7 @@ owner=eblake@redhat.com
 seq=`basename $0`
 echo "QA output created by $seq"
 
+here=`pwd`
 status=1	# failure is the default!
 
 _cleanup()
@@ -93,7 +94,7 @@ $QEMU_IO -c "open -o $options,$limits blkdebug::$TEST_IMG" \
 echo
 echo "== verify image content =="
 
-verify_io()
+function verify_io()
 {
     echo read -P 22 0 1000
     echo read -P 33 1000 128k

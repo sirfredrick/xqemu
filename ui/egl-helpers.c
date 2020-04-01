@@ -15,14 +15,15 @@
  * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
 #include "qemu/osdep.h"
-#include "qemu/drm.h"
+#include <glob.h>
+#include <dirent.h>
+
 #include "qemu/error-report.h"
 #include "ui/console.h"
 #include "ui/egl-helpers.h"
 
 EGLDisplay *qemu_egl_display;
 EGLConfig qemu_egl_config;
-DisplayGLMode qemu_egl_mode;
 
 /* ------------------------------------------------------------------ */
 
@@ -120,15 +121,14 @@ void egl_texture_blit(QemuGLShader *gls, egl_fb *dst, egl_fb *src, bool flip)
 }
 
 void egl_texture_blend(QemuGLShader *gls, egl_fb *dst, egl_fb *src, bool flip,
-                       int x, int y, double scale_x, double scale_y)
+                       int x, int y)
 {
     glBindFramebuffer(GL_FRAMEBUFFER_EXT, dst->framebuffer);
-    int w = scale_x * src->width;
-    int h = scale_y * src->height;
     if (flip) {
-        glViewport(x, y, w, h);
+        glViewport(x, y, src->width, src->height);
     } else {
-        glViewport(x, dst->height - h - y, w, h);
+        glViewport(x, dst->height - src->height - y,
+                   src->width, src->height);
     }
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, src->texture);
@@ -146,12 +146,57 @@ int qemu_egl_rn_fd;
 struct gbm_device *qemu_egl_rn_gbm_dev;
 EGLContext qemu_egl_rn_ctx;
 
-int egl_rendernode_init(const char *rendernode, DisplayGLMode mode)
+static int qemu_egl_rendernode_open(const char *rendernode)
+{
+    DIR *dir;
+    struct dirent *e;
+    int r, fd;
+    char *p;
+
+    if (rendernode) {
+        return open(rendernode, O_RDWR | O_CLOEXEC | O_NOCTTY | O_NONBLOCK);
+    }
+
+    dir = opendir("/dev/dri");
+    if (!dir) {
+        return -1;
+    }
+
+    fd = -1;
+    while ((e = readdir(dir))) {
+        if (e->d_type != DT_CHR) {
+            continue;
+        }
+
+        if (strncmp(e->d_name, "renderD", 7)) {
+            continue;
+        }
+
+        p = g_strdup_printf("/dev/dri/%s", e->d_name);
+
+        r = open(p, O_RDWR | O_CLOEXEC | O_NOCTTY | O_NONBLOCK);
+        if (r < 0) {
+            g_free(p);
+            continue;
+        }
+        fd = r;
+        g_free(p);
+        break;
+    }
+
+    closedir(dir);
+    if (fd < 0) {
+        return -1;
+    }
+    return fd;
+}
+
+int egl_rendernode_init(const char *rendernode)
 {
     qemu_egl_rn_fd = -1;
     int rc;
 
-    qemu_egl_rn_fd = qemu_drm_rendernode_open(rendernode);
+    qemu_egl_rn_fd = qemu_egl_rendernode_open(rendernode);
     if (qemu_egl_rn_fd == -1) {
         error_report("egl: no drm render node available");
         goto err;
@@ -163,8 +208,7 @@ int egl_rendernode_init(const char *rendernode, DisplayGLMode mode)
         goto err;
     }
 
-    rc = qemu_egl_init_dpy_mesa((EGLNativeDisplayType)qemu_egl_rn_gbm_dev,
-                                mode);
+    rc = qemu_egl_init_dpy_mesa((EGLNativeDisplayType)qemu_egl_rn_gbm_dev);
     if (rc != 0) {
         /* qemu_egl_init_dpy_mesa reports error */
         goto err;
@@ -274,14 +318,14 @@ void egl_dmabuf_release_texture(QemuDmaBuf *dmabuf)
 
 /* ---------------------------------------------------------------------- */
 
-EGLSurface qemu_egl_init_surface_x11(EGLContext ectx, EGLNativeWindowType win)
+EGLSurface qemu_egl_init_surface_x11(EGLContext ectx, Window win)
 {
     EGLSurface esurface;
     EGLBoolean b;
 
     esurface = eglCreateWindowSurface(qemu_egl_display,
                                       qemu_egl_config,
-                                      win, NULL);
+                                      (EGLNativeWindowType)win, NULL);
     if (esurface == EGL_NO_SURFACE) {
         error_report("egl: eglCreateWindowSurface failed");
         return NULL;
@@ -348,21 +392,11 @@ static EGLDisplay qemu_egl_get_display(EGLNativeDisplayType native,
 }
 
 static int qemu_egl_init_dpy(EGLNativeDisplayType dpy,
-                             EGLenum platform,
-                             DisplayGLMode mode)
+                             EGLenum platform)
 {
-    static const EGLint conf_att_core[] = {
+    static const EGLint conf_att_gl[] = {
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
         EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
-        EGL_RED_SIZE,   5,
-        EGL_GREEN_SIZE, 5,
-        EGL_BLUE_SIZE,  5,
-        EGL_ALPHA_SIZE, 0,
-        EGL_NONE,
-    };
-    static const EGLint conf_att_gles[] = {
-        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
         EGL_RED_SIZE,   5,
         EGL_GREEN_SIZE, 5,
         EGL_BLUE_SIZE,  5,
@@ -372,7 +406,6 @@ static int qemu_egl_init_dpy(EGLNativeDisplayType dpy,
     EGLint major, minor;
     EGLBoolean b;
     EGLint n;
-    bool gles = (mode == DISPLAYGL_MODE_ES);
 
     qemu_egl_display = qemu_egl_get_display(dpy, platform);
     if (qemu_egl_display == EGL_NO_DISPLAY) {
@@ -386,60 +419,50 @@ static int qemu_egl_init_dpy(EGLNativeDisplayType dpy,
         return -1;
     }
 
-    b = eglBindAPI(gles ?  EGL_OPENGL_ES_API : EGL_OPENGL_API);
+    b = eglBindAPI(EGL_OPENGL_API);
     if (b == EGL_FALSE) {
-        error_report("egl: eglBindAPI failed (%s mode)",
-                     gles ? "gles" : "core");
+        error_report("egl: eglBindAPI failed");
         return -1;
     }
 
-    b = eglChooseConfig(qemu_egl_display,
-                        gles ? conf_att_gles : conf_att_core,
+    b = eglChooseConfig(qemu_egl_display, conf_att_gl,
                         &qemu_egl_config, 1, &n);
     if (b == EGL_FALSE || n != 1) {
-        error_report("egl: eglChooseConfig failed (%s mode)",
-                     gles ? "gles" : "core");
+        error_report("egl: eglChooseConfig failed");
         return -1;
     }
-
-    qemu_egl_mode = gles ? DISPLAYGL_MODE_ES : DISPLAYGL_MODE_CORE;
     return 0;
 }
 
-int qemu_egl_init_dpy_x11(EGLNativeDisplayType dpy, DisplayGLMode mode)
+int qemu_egl_init_dpy_x11(EGLNativeDisplayType dpy)
 {
 #ifdef EGL_KHR_platform_x11
-    return qemu_egl_init_dpy(dpy, EGL_PLATFORM_X11_KHR, mode);
+    return qemu_egl_init_dpy(dpy, EGL_PLATFORM_X11_KHR);
 #else
-    return qemu_egl_init_dpy(dpy, 0, mode);
+    return qemu_egl_init_dpy(dpy, 0);
 #endif
 }
 
-int qemu_egl_init_dpy_mesa(EGLNativeDisplayType dpy, DisplayGLMode mode)
+int qemu_egl_init_dpy_mesa(EGLNativeDisplayType dpy)
 {
 #ifdef EGL_MESA_platform_gbm
-    return qemu_egl_init_dpy(dpy, EGL_PLATFORM_GBM_MESA, mode);
+    return qemu_egl_init_dpy(dpy, EGL_PLATFORM_GBM_MESA);
 #else
-    return qemu_egl_init_dpy(dpy, 0, mode);
+    return qemu_egl_init_dpy(dpy, 0);
 #endif
 }
 
 EGLContext qemu_egl_init_ctx(void)
 {
-    static const EGLint ctx_att_core[] = {
+    static const EGLint ctx_att_gl[] = {
         EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
         EGL_NONE
     };
-    static const EGLint ctx_att_gles[] = {
-        EGL_CONTEXT_CLIENT_VERSION, 2,
-        EGL_NONE
-    };
-    bool gles = (qemu_egl_mode == DISPLAYGL_MODE_ES);
     EGLContext ectx;
     EGLBoolean b;
 
     ectx = eglCreateContext(qemu_egl_display, qemu_egl_config, EGL_NO_CONTEXT,
-                            gles ? ctx_att_gles : ctx_att_core);
+                            ctx_att_gl);
     if (ectx == EGL_NO_CONTEXT) {
         error_report("egl: eglCreateContext failed");
         return NULL;

@@ -125,10 +125,6 @@ enum {
 
 #define MUTE_SHIFT 15
 
-#define TYPE_AC97 "AC97"
-#define AC97(obj) \
-    OBJECT_CHECK(AC97LinkState, (obj), TYPE_AC97)
-
 #define REC_MASK 7
 enum {
     REC_MIC = 0,
@@ -328,7 +324,7 @@ static void open_voice (AC97LinkState *s, int index, int freq)
 
     as.freq = freq;
     as.nchannels = 2;
-    as.fmt = AUDIO_FORMAT_S16;
+    as.fmt = AUD_FMT_S16;
     as.endianness = 0;
 
     if (freq > 0) {
@@ -1419,7 +1415,7 @@ static void ac97_exit (PCIDevice *dev)
 
 static int ac97_init (PCIBus *bus)
 {
-    pci_create_simple(bus, -1, TYPE_AC97);
+    pci_create_simple (bus, -1, "AC97");
     return 0;
 }
 
@@ -1447,7 +1443,7 @@ static void ac97_class_init (ObjectClass *klass, void *data)
 }
 
 static const TypeInfo ac97_info = {
-    .name          = TYPE_AC97,
+    .name          = "AC97",
     .parent        = TYPE_PCI_DEVICE,
     .instance_size = sizeof (AC97DeviceState),
     .class_init    = ac97_class_init,
