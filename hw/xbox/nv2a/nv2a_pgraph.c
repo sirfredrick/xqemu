@@ -3474,7 +3474,7 @@ static void pgraph_update_surface_part(NV2AState *d, bool upload, bool color) {
                        bytes_per_pixel, surface->pitch,
                        width, height,
                        buf);
-        assert(glGetError() == GL_NO_ERROR);
+        // assert(glGetError() == GL_NO_ERROR);
 
         if (swizzle) {
             swizzle_rect(buf,
@@ -3867,11 +3867,11 @@ static void pgraph_bind_textures(NV2AState *d)
             pgraph_texture_mag_filter_map[mag_filter]);
 
         /* Texture wrapping */
-        assert(addru < ARRAY_SIZE(pgraph_texture_addr_map));
+        // assert(addru < ARRAY_SIZE(pgraph_texture_addr_map));
         glTexParameteri(binding->gl_target, GL_TEXTURE_WRAP_S,
             pgraph_texture_addr_map[addru]);
         if (dimensionality > 1) {
-            assert(addrv < ARRAY_SIZE(pgraph_texture_addr_map));
+            // assert(addrv < ARRAY_SIZE(pgraph_texture_addr_map));
             glTexParameteri(binding->gl_target, GL_TEXTURE_WRAP_T,
                 pgraph_texture_addr_map[addrv]);
         }
